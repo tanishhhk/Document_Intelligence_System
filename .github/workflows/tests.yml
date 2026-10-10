@@ -9,6 +9,7 @@ on:
       - feature/runtime-config-security
       - feature/gemini-sdk-migration
       - docs/api-and-security-overview
+      - security/secret-scanning
   pull_request:
     branches:
       - main
