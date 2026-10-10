@@ -53,7 +53,7 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     if user is None or not verify_password(user_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Invalid email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
