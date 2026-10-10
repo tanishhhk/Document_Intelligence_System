@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from datetime import timedelta
 import time
 
@@ -25,7 +24,6 @@ router = APIRouter(tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register an account with a normalized email address."""
     email = str(user_data.email).strip().lower()
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(
@@ -49,7 +47,6 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login(user_data: UserLogin, db: Session = Depends(get_db)):
-    """Validate credentials and issue a signed bearer token."""
     email = str(user_data.email).strip().lower()
     user = db.query(User).filter(User.email == email).first()
 
@@ -73,7 +70,6 @@ def logout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Revoke the current token so it cannot be used again."""
     payload = decode_access_token(credentials.credentials)
     if not payload or payload.get("user_id") != current_user.id:
         raise HTTPException(
