@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
 
     GEMINI_API_KEY: str = Field(min_length=1)
+    gemini_model: str = "gemini-3.8-flash"
 
     upload_dir: str = "./uploads"
     max_file_size: int = Field(default=10 * 1024 * 1024, gt=0)
