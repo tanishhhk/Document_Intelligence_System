@@ -1,7 +1,12 @@
 .env
+.env.*
+!.env.example
 uploads/
 __pycache__/
+*.py[cod]
 .venv/
-venv
+venv/
 document_intelligence.db
-
+.pytest_cache/
+.coverage
+htmlcov/
