@@ -25,7 +25,12 @@ _READ_CHUNK_SIZE = 1024 * 1024
 
 def _extract_and_embed_pdf(file_path: str):
     """Run CPU-bound PDF parsing and embedding work outside the event loop."""
-    extracted_text = extract_text_from_pdf(file_path)
+    try:
+        extracted_text = extract_text_from_pdf(file_path)
+    except Exception as exc:
+        raise ValueError(
+            "The uploaded PDF could not be read. Ensure it is a valid, unencrypted PDF."
+        ) from exc
     if not extracted_text or not extracted_text.strip():
         raise ValueError(
             "No selectable text was found in this PDF. Scanned/image-only PDFs need OCR."
