@@ -45,3 +45,15 @@ def test_sqlite_receives_only_sqlite_connection_options():
 
 def test_postgres_does_not_receive_sqlite_connection_options():
     assert _engine_options("postgresql+psycopg://user:pass@localhost/app") == {}
+
+ 
+
+def test_cors_middleware_uses_the_allowlist():
+    from app.main import app
+
+    cors_middleware = next(
+        item for item in app.user_middleware
+        if item.cls.__name__ == "CORSMiddleware"
+    )
+    assert "*" not in cors_middleware.options["allow_origins"]
+    assert cors_middleware.options["allow_credentials"] is True
