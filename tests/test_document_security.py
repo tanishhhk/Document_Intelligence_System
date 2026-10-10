@@ -356,7 +356,7 @@ def test_rate_limit_rejects_excess_requests_from_the_same_peer():
         ),
     )
 
-    async def invoke():
+    async def invoke(peer_ip="203.0.113.10"):
         received = []
 
         async def receive():
@@ -375,7 +375,7 @@ def test_rate_limit_rejects_excess_requests_from_the_same_peer():
             "raw_path": b"/auth/login",
             "query_string": b"",
             "headers": [],
-            "client": ("203.0.113.10", 12345),
+            "client": (peer_ip, 12345),
             "server": ("testserver", 80),
         }
         await limiter(scope, receive, send)
@@ -384,9 +384,17 @@ def test_rate_limit_rejects_excess_requests_from_the_same_peer():
     async def run_twice():
         return await invoke(), await invoke()
 
+    limiter.max_tracked_keys = 1
+
     first_status, second_status = asyncio.run(run_twice())
     assert first_status == 200
     assert second_status == 429
+
+    async def invoke_another_peer():
+        return await invoke("203.0.113.11")
+
+    assert asyncio.run(invoke_another_peer()) == 429
+    assert len(limiter.requests) == 1
 
 
 def test_pdf_processor_enforces_page_and_character_caps(monkeypatch, tmp_path):
