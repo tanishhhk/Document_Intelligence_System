@@ -38,7 +38,7 @@ ANSWER:"""
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=settings.gemini_model,
                 contents=prompt,
             )
             answer = getattr(response, "text", None)
