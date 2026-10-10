@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
 
     database_url: str = Field(min_length=1)
     secret_key: str = Field(min_length=32)
-    algorithm: str = "HS256"
+    algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
 
     GEMINI_API_KEY: str = Field(min_length=1)
