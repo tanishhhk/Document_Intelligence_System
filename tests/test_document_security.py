@@ -181,7 +181,7 @@ def test_upload_sets_server_side_owner_and_indexes_chunks(
 
     response = client.post(
         "/documents/upload",
-        headers=bearer(owner_token),
+        headers={**bearer(owner_token), "Idempotency-Key": "upload-test-0001"},
         files={"file": ("sample.pdf", b"%PDF-1.7\nminimal test PDF", "application/pdf")},
     )
     assert response.status_code == 201, response.text
@@ -207,7 +207,7 @@ def test_upload_rejects_non_pdf_content_and_removes_temporary_file(
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
     response = client.post(
         "/documents/upload",
-        headers=bearer(owner_token),
+        headers={**bearer(owner_token), "Idempotency-Key": "upload-test-0002"},
         files={"file": ("fake.pdf", b"not a PDF", "application/pdf")},
     )
     assert response.status_code == 415
@@ -222,7 +222,7 @@ def test_upload_enforces_size_limit_and_removes_partial_file(
     monkeypatch.setattr(settings, "max_file_size", 8)
     response = client.post(
         "/documents/upload",
-        headers=bearer(owner_token),
+        headers={**bearer(owner_token), "Idempotency-Key": "upload-test-0003"},
         files={"file": ("large.pdf", b"%PDF-1.7\ncontent beyond limit", "application/pdf")},
     )
     assert response.status_code == 413
@@ -239,7 +239,7 @@ def test_scan_without_selectable_text_is_rejected(client, users_and_tokens, monk
     monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", no_text)
     response = client.post(
         "/documents/upload",
-        headers=bearer(owner_token),
+        headers={**bearer(owner_token), "Idempotency-Key": "upload-test-0004"},
         files={"file": ("scan.pdf", b"%PDF-1.7\nscan", "application/pdf")},
     )
     assert response.status_code == 422
@@ -289,3 +289,125 @@ def test_top_k_and_question_length_are_bounded(client, users_and_tokens):
     )
     assert too_many.status_code == 422
     assert too_long.status_code == 422
+
+
+
+def test_replayed_upload_with_same_key_returns_existing_document(
+    client, users_and_tokens, monkeypatch, tmp_path
+):
+    _owner, _stranger, owner_token, _stranger_token = users_and_tokens
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    calls = {"count": 0}
+
+    def fake_extract(_path):
+        calls["count"] += 1
+        return ["Example passage"], [[0.1, 0.2]]
+
+    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", fake_extract)
+    headers = {
+        **bearer(owner_token),
+        "Idempotency-Key": "same-upload-request-0001",
+    }
+    first = client.post(
+        "/documents/upload",
+        headers=headers,
+        files={"file": ("sample.pdf", b"%PDF-1.7\nminimal test PDF", "application/pdf")},
+    )
+    second = client.post(
+        "/documents/upload",
+        headers=headers,
+        files={"file": ("sample.pdf", b"%PDF-1.7\nminimal test PDF", "application/pdf")},
+    )
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"]
+    assert calls["count"] == 1
+
+
+def test_upload_requires_an_idempotency_key(client, users_and_tokens):
+    _owner, _stranger, owner_token, _stranger_token = users_and_tokens
+    response = client.post(
+        "/documents/upload",
+        headers=bearer(owner_token),
+        files={"file": ("sample.pdf", b"%PDF-1.7\nminimal test PDF", "application/pdf")},
+    )
+    assert response.status_code == 422
+
+
+def test_rate_limit_rejects_excess_requests_from_the_same_peer():
+    import asyncio
+    from types import SimpleNamespace
+
+    from starlette.responses import PlainTextResponse
+
+    from app.middleware.rate_limit import RateLimitMiddleware
+
+    async def downstream(scope, receive, send):
+        await PlainTextResponse("ok")(scope, receive, send)
+
+    limiter = RateLimitMiddleware(
+        downstream,
+        SimpleNamespace(
+            auth_requests_per_minute=1,
+            upload_requests_per_minute=2,
+            chat_requests_per_minute=3,
+            default_requests_per_minute=10,
+        ),
+    )
+
+    async def invoke():
+        received = []
+
+        async def receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message):
+            received.append(message)
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/auth/login",
+            "raw_path": b"/auth/login",
+            "query_string": b"",
+            "headers": [],
+            "client": ("203.0.113.10", 12345),
+            "server": ("testserver", 80),
+        }
+        await limiter(scope, receive, send)
+        return next(message["status"] for message in received if message["type"] == "http.response.start")
+
+    async def run_twice():
+        return await invoke(), await invoke()
+
+    first_status, second_status = asyncio.run(run_twice())
+    assert first_status == 200
+    assert second_status == 429
+
+
+def test_pdf_processor_enforces_page_and_character_caps(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from app.utils import pdf_processor
+
+    file_path = tmp_path / "sample.pdf"
+    file_path.write_bytes(b"%PDF-placeholder")
+    monkeypatch.setattr(
+        pdf_processor,
+        "PdfReader",
+        lambda *_args, **_kwargs: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "abc")] * 2),
+    )
+    with pytest.raises(ValueError, match="pages"):
+        pdf_processor.extract_text_from_pdf(str(file_path), max_pages=1, max_chars=100)
+
+    monkeypatch.setattr(
+        pdf_processor,
+        "PdfReader",
+        lambda *_args, **_kwargs: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "abcdef")]),
+    )
+    with pytest.raises(ValueError, match="character"):
+        pdf_processor.extract_text_from_pdf(str(file_path), max_pages=2, max_chars=4)
