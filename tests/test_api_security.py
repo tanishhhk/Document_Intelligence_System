@@ -51,7 +51,7 @@ def client():
 
 
 @pytest.fixture()
-def users_and_tokens():
+def users_and_tokens(client):
     db = TestingSessionLocal()
     try:
         owner = User(
