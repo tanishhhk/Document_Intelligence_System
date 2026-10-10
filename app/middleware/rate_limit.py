@@ -1,6 +1,6 @@
 import asyncio
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 
 from starlette.responses import JSONResponse
 
@@ -17,7 +17,8 @@ class RateLimitMiddleware:
         self.app = app
         self.settings = settings
         self.window_seconds = 60
-        self.requests = defaultdict(deque)
+        self.max_tracked_keys = 10_000
+        self.requests = OrderedDict()
         self.lock = asyncio.Lock()
 
     def _bucket_for(self, method, path):
@@ -42,27 +43,43 @@ class RateLimitMiddleware:
         bucket, limit = self._bucket_for(method, path)
         key = (peer_ip, bucket)
         now = time.monotonic()
+        response = None
 
         async with self.lock:
             cutoff = now - self.window_seconds
-            for old_key in list(self.requests):
-                history = self.requests[old_key]
+            while self.requests:
+                oldest_key, oldest_history = next(iter(self.requests.items()))
+                if not oldest_history or oldest_history[-1] <= cutoff:
+                    self.requests.popitem(last=False)
+                else:
+                    break
+
+            history = self.requests.get(key)
+            if history is None:
+                if len(self.requests) >= self.max_tracked_keys:
+                    response = JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many requests. Try again shortly."},
+                        headers={"Retry-After": str(self.window_seconds)},
+                    )
+                else:
+                    history = deque()
+                    self.requests[key] = history
+
+            if history is not None:
                 while history and history[0] <= cutoff:
                     history.popleft()
-                if not history:
-                    del self.requests[old_key]
 
-            history = self.requests[key]
-            if len(history) >= limit:
-                retry_after = max(1, int(self.window_seconds - (now - history[0])))
-                response = JSONResponse(
-                    status_code=429,
-                    content={"detail": "Too many requests. Try again shortly."},
-                    headers={"Retry-After": str(retry_after)},
-                )
-            else:
-                history.append(now)
-                response = None
+                if len(history) >= limit:
+                    retry_after = max(1, int(self.window_seconds - (now - history[0])))
+                    response = JSONResponse(
+                        status_code=429,
+                        content={"detail": "Too many requests. Try again shortly."},
+                        headers={"Retry-After": str(retry_after)},
+                    )
+                else:
+                    history.append(now)
+                    self.requests.move_to_end(key)
 
         if response is not None:
             await response(scope, receive, send)
