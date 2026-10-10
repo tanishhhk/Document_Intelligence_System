@@ -1,13 +1,13 @@
 from functools import lru_cache
 from typing import List
 
-from sentence_transformers import SentenceTransformer
-
 
 @lru_cache(maxsize=1)
-def _get_model() -> SentenceTransformer:
-    # Load model weights only when an embedding is first requested. This keeps
-    # API startup and route tests from triggering a model download unnecessarily.
+def _get_model():
+    # Import the heavyweight ML runtime only when an embedding is actually
+    # requested. API import and unit tests do not need to download model weights.
+    from sentence_transformers import SentenceTransformer
+
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 
