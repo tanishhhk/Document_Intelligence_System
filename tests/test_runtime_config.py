@@ -1,4 +1,5 @@
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.config import Settings
@@ -46,19 +47,36 @@ def test_sqlite_receives_only_sqlite_connection_options():
 def test_postgres_does_not_receive_sqlite_connection_options():
     assert _engine_options("postgresql+psycopg://user:pass@localhost/app") == {}
 
- 
 
-def test_cors_middleware_uses_the_allowlist():
+def test_cors_middleware_rejects_unlisted_origins():
     from app.main import app
 
-    cors_middleware = next(
-        item for item in app.user_middleware
-        if item.cls.__name__ == "CORSMiddleware"
-    )
-    assert "*" not in cors_middleware.options["allow_origins"]
-    assert cors_middleware.options["allow_credentials"] is True
+    with TestClient(app) as client:
+        response = client.options(
+            "/health",
+            headers={
+                "Origin": "https://not-allowed.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
 
- 
+
+def test_cors_middleware_allows_configured_origins():
+    from app.main import app
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/health",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+
 
 def test_settings_do_not_allow_unexpected_jwt_algorithms():
     with pytest.raises(ValidationError):
