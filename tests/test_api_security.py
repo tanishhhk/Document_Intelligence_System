@@ -195,3 +195,98 @@ def test_top_k_is_bounded_before_retrieval(client, users_and_tokens):
         json={"question": "Question", "document_id": "any-id", "top_k": 1000},
     )
     assert response.status_code == 422
+
+
+
+def test_registration_rejects_weak_passwords(client):
+    response = client.post(
+        "/auth/register",
+        json={"email": "weak@example.com", "password": "short"},
+    )
+    assert response.status_code == 422
+
+
+def test_registration_rejects_bcrypt_overlong_utf8_password(client):
+    # This password is fewer than 72 characters but exceeds 72 UTF-8 bytes.
+    response = client.post(
+        "/auth/register",
+        json={"email": "long@example.com", "password": "é" * 40},
+    )
+    assert response.status_code == 422
+
+
+def test_pdf_upload_rejects_non_pdf_content_and_removes_temp_file(
+    client, users_and_tokens, monkeypatch, tmp_path
+):
+    _owner, _stranger, owner_token, _stranger_token = users_and_tokens
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    response = client.post(
+        "/documents/upload",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        files={"file": ("fake.pdf", b"this is not a PDF", "application/pdf")},
+    )
+    assert response.status_code == 415
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_pdf_upload_enforces_configured_size_limit_and_cleans_partial_file(
+    client, users_and_tokens, monkeypatch, tmp_path
+):
+    _owner, _stranger, owner_token, _stranger_token = users_and_tokens
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "max_file_size", 8)
+    response = client.post(
+        "/documents/upload",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        files={"file": ("large.pdf", b"%PDF-1.7\nthis is larger than 8 bytes", "application/pdf")},
+    )
+    assert response.status_code == 413
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_owned_document_can_be_queried_with_source_metadata(
+    client, users_and_tokens, monkeypatch
+):
+    import app.api.chat as chat_api
+    from app.models.document_chunk import DocumentChunk
+
+    owner, _stranger, owner_token, _stranger_token = users_and_tokens
+    document_id = str(uuid.uuid4())
+    db = TestingSessionLocal()
+    try:
+        db.add(
+            Document(
+                id=document_id,
+                user_id=owner.id,
+                filename="policy.pdf",
+                file_path="/tmp/policy.pdf",
+                file_size=120,
+                status="completed",
+            )
+        )
+        chunk = DocumentChunk(
+            id=str(uuid.uuid4()),
+            document_id=document_id,
+            chunk_index=0,
+            chunk_text="The cancellation window is 30 days.",
+        )
+        chunk.set_embedding([1.0, 0.0])
+        db.add(chunk)
+        db.commit()
+    finally:
+        db.close()
+
+    monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _question: [1.0, 0.0])
+    monkeypatch.setattr(chat_api, "generate_answer", lambda _question, _context: "30 days")
+
+    response = client.post(
+        "/chat/ask",
+        headers={"Authorization": f"Bearer {owner_token}"},
+        json={"question": "What is the cancellation window?", "document_id": document_id, "top_k": 1},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["answer"] == "30 days"
+    assert body["document_name"] == "policy.pdf"
+    assert body["sources"][0]["chunk_index"] == 0
+    assert body["metadata"]["top_k_used"] == 1
