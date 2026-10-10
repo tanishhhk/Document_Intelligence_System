@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
@@ -105,6 +106,6 @@ def ask_question(
         "metadata": {
             "chunks_searched": len(chunks),
             "top_k_used": len(top_chunks),
-            "model": "gemini-2.5-flash",
+            "model": settings.gemini_model,
         },
     }
