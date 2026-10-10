@@ -89,6 +89,17 @@ Example question request:
 
 The API limits `top_k` to 1-10 and question text to 4,000 characters. Uploads are streamed and capped by `MAX_FILE_SIZE` (10 MiB by default). Each document operation is scoped to the authenticated owner; another user's document is reported as not found.
 
+## Tests
+
+Install the API test dependencies and run the regression suite:
+
+```bash
+python -m pip install -r requirements-dev.txt
+pytest -q
+```
+
+The tests verify route prefixes, registration/login, authentication requirements, per-user document isolation, upload ownership, and the `top_k` bound. The upload test stubs the embedding pipeline so it does not download model weights or call external AI services.
+
 ## Important limitations
 
 - PDF ingestion and Gemini response generation still happen synchronously within the request, although CPU-bound extraction/embedding work is moved off the async event loop. Large files may take time and tie up request workers.
