@@ -8,7 +8,7 @@ A FastAPI backend for question-answering over PDF documents with retrieval-augme
 2. Extract selectable text with `pypdf`; image-only/scanned PDFs require OCR and are rejected with a clear error for now.
 3. Split text into overlapping chunks and create normalized `all-MiniLM-L6-v2` embeddings.
 4. Store document metadata, chunks, and JSON-serialized vectors in SQL.
-5. Retrieve the highest cosine-similarity chunks for a question and pass those passages to Gemini 2.5 Flash.
+5. Retrieve the highest cosine-similarity chunks for a question and pass those passages to Gemini 3.8 Flash (configurable).
 6. Return the answer and source chunk IDs/similarity scores.
 
 Retrieval is exact brute-force cosine over the selected document's chunks. A vector database is not currently used.
