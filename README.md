@@ -71,7 +71,7 @@ The embedding model is downloaded the first time an embedding is requested, so f
 
 ### Login and protected requests
 
-Register and log in through the API docs. Copy the returned `access_token`, then send it in the HTTP header:
+Registration requires a password of at least 12 characters and at most 72 UTF-8 bytes (the bcrypt input limit). Existing accounts may still sign in with their current password if it meets bcrypt's byte limit. Login normalizes the email address to lowercase. Register and log in through the API docs. Copy the returned `access_token`, then send it in the HTTP header:
 
 ```
 Authorization: Bearer <access_token>
