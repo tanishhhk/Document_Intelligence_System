@@ -57,3 +57,9 @@ def test_cors_middleware_uses_the_allowlist():
     )
     assert "*" not in cors_middleware.options["allow_origins"]
     assert cors_middleware.options["allow_credentials"] is True
+
+ 
+
+def test_settings_do_not_allow_unexpected_jwt_algorithms():
+    with pytest.raises(ValidationError):
+        make_settings(algorithm="none")
