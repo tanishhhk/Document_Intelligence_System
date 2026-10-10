@@ -17,7 +17,7 @@ class RateLimitMiddleware:
         self.app = app
         self.settings = settings
         self.window_seconds = 60
-        self.max_tracked_keys = 10_000
+        self.max_tracked_keys = settings.max_rate_limit_keys
         self.requests = OrderedDict()
         self.lock = asyncio.Lock()
 
