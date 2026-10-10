@@ -103,3 +103,31 @@ def test_registration_rejects_passwords_over_bcrypt_byte_limit():
             json={"email": "long@example.com", "password": "é" * 40},
         )
         assert response.status_code == 422
+
+
+
+def test_logout_revokes_the_access_token():
+    with TestClient(app) as client:
+        client.post(
+            "/auth/register",
+            json={"email": "logout@example.com", "password": "StrongPassword123!"},
+        )
+        login = client.post(
+            "/auth/login",
+            json={"email": "logout@example.com", "password": "StrongPassword123!"},
+        )
+        token = login.json()["access_token"]
+        payload = decode_access_token(token)
+        assert isinstance(payload.get("jti"), str)
+
+        logout = client.post(
+            "/auth/logout",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert logout.status_code == 204
+
+        replay = client.post(
+            "/auth/logout",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert replay.status_code == 401
