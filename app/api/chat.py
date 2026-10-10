@@ -1,94 +1,110 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+import logging
+
 import numpy as np
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import get_current_user
 from app.database import get_db
-from app.models.document_chunk import DocumentChunk
 from app.models.document import Document
+from app.models.document_chunk import DocumentChunk
+from app.models.user import User
 from app.services.embeddings import generate_single_embedding
 from app.services.llm import generate_answer
 
-router = APIRouter()  # ✅ Remove prefix here
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["Chat"])
 
 
 class QuestionRequest(BaseModel):
-    question: str
-    document_id: str
-    top_k: int = 3
+    question: str = Field(min_length=1, max_length=4000)
+    document_id: str = Field(min_length=1)
+    top_k: int = Field(default=3, ge=1, le=10)
 
 
-class AnswerResponse(BaseModel):
-    answer: str
-    sources: list[dict]
+def cosine_similarity(a, b) -> float:
+    """Compute cosine similarity safely for two embedding vectors."""
+    vector_a = np.asarray(a, dtype=np.float32)
+    vector_b = np.asarray(b, dtype=np.float32)
+    if vector_a.shape != vector_b.shape or vector_a.ndim != 1:
+        return 0.0
+    denominator = float(np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
+    if denominator == 0.0:
+        return 0.0
+    return float(np.dot(vector_a, vector_b) / denominator)
 
 
-def cosine_similarity(a, b):
-    """Calculate cosine similarity between two 1D vectors"""
-    a = np.array(a)
-    b = np.array(b)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-
-
-@router.post("/ask")  # ✅ Just /ask, not /chat/ask
-async def ask_question(
+@router.post("/ask")
+def ask_question(
     request: QuestionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Ask a question about a document"""
-    # Verify document exists
-    document = db.query(Document).filter(Document.id == request.document_id).first()
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
+    """Answer a question using only a document owned by the authenticated user."""
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Question cannot be blank.")
 
-    # Generate question embedding
-    question_embedding = generate_single_embedding(request.question)
+    document = (
+        db.query(Document)
+        .filter(Document.id == request.document_id, Document.user_id == current_user.id)
+        .first()
+    )
+    if document is None:
+        # Do not reveal whether another account owns this document.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
 
-    # Get all chunks for this document
-    chunks = db.query(DocumentChunk).filter(
-        DocumentChunk.document_id == request.document_id
-    ).all()
-
+    chunks = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.document_id == document.id)
+        .order_by(DocumentChunk.chunk_index)
+        .all()
+    )
     if not chunks:
-        raise HTTPException(status_code=404, detail="No chunks found for this document")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This document has no indexed text available for questions.",
+        )
 
-    # Calculate similarities
-    similarities = []
+    question_embedding = generate_single_embedding(question)
+    ranked_chunks = []
     for chunk in chunks:
-        chunk_emb = chunk.get_embedding()
-        similarity = cosine_similarity(question_embedding, chunk_emb)
-        similarities.append({
-            "chunk": chunk,
-            "similarity": float(similarity)
-        })
+        similarity = cosine_similarity(question_embedding, chunk.get_embedding())
+        ranked_chunks.append({"chunk": chunk, "similarity": similarity})
+    ranked_chunks.sort(key=lambda item: item["similarity"], reverse=True)
+    top_chunks = ranked_chunks[: request.top_k]
 
-    # Sort by similarity and get top k
-    similarities.sort(key=lambda x: x["similarity"], reverse=True)
-    top_chunks = similarities[:request.top_k]
-
-    # Build context from top chunks
-    context = "\n\n".join([item["chunk"].chunk_text for item in top_chunks])
-
-    # Generate answer
+    context = "\n\n".join(
+        f"[Source chunk {item['chunk'].chunk_index}]\n{item['chunk'].chunk_text}"
+        for item in top_chunks
+    )
     try:
-        answer = generate_answer(request.question, context)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        answer = generate_answer(question, context)
+    except Exception as exc:
+        logger.exception("Answer generation failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The answer provider failed. Please retry shortly.",
+        ) from exc
 
-    # Return formatted response
     return {
         "answer": answer,
         "document_name": document.filename,
         "sources": [
             {
                 "chunk_index": item["chunk"].chunk_index,
-                "similarity_score": item["similarity"],
-                "preview": item["chunk"].chunk_text[:200] + "..."
+                "similarity_score": round(item["similarity"], 6),
+                "preview": (
+                    item["chunk"].chunk_text[:200]
+                    + ("..." if len(item["chunk"].chunk_text) > 200 else "")
+                ),
             }
             for item in top_chunks
         ],
         "metadata": {
             "chunks_searched": len(chunks),
-            "top_k_used": request.top_k,
-            "model": "gemini-2.5-flash"
-        }
+            "top_k_used": len(top_chunks),
+            "model": "gemini-2.5-flash",
+        },
     }
