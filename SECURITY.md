@@ -52,6 +52,10 @@ The limiter is in-process. It is not a distributed rate limiter or network-level
 
 A document can contain text written to manipulate the model, such as "ignore previous instructions". The controls above reduce the risk, and `scripts/evaluate_answers.py` checks two injection cases against the live model, but no prompt design fully prevents a model from being influenced by its input. Because the model cannot take actions and only sees the requesting user's own document, a successful injection can at worst distort that user's answer.
 
+### Hostile PDF files
+
+A PDF signature check does not make a file safe to parse. Parsing runs in a child process with a time limit and, on Linux, a memory limit (`RLIMIT_DATA`); a file that exceeds either fails with an error instead of stalling or exhausting the worker. The child runs with the same user and file system access as the worker, so this limits resource use rather than sandboxing the parser. Windows has no memory limit.
+
 ### Clipboard attacks
 
 The backend has no clipboard feature and does not access browser clipboard contents. Clipboard handling, if introduced in a frontend, needs a separate client-side review.

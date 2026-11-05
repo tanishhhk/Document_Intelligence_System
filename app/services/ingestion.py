@@ -21,6 +21,7 @@ from app.config import settings
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.services.embeddings import EMBEDDING_DIMENSION, EMBEDDING_MODEL, generate_embeddings
+from app.utils.isolated import IsolationCrashed, IsolationTimeout, run_isolated
 from app.utils.pdf_processor import extract_pages
 from app.utils.text_processor import chunk_pages
 
@@ -49,11 +50,22 @@ def extract_and_embed_pdf(pdf_bytes: bytes):
     Returns (chunks, embeddings, page_count).
     """
     try:
-        pages = extract_pages(
+        pages = run_isolated(
+            extract_pages,
             pdf_bytes,
             max_pages=settings.max_pdf_pages,
             max_chars=settings.max_pdf_chars,
+            timeout=settings.pdf_parse_timeout_seconds,
+            memory_limit_bytes=settings.pdf_parse_memory_mb * 1024 * 1024,
         )
+    except IsolationTimeout as exc:
+        raise DocumentRejected(
+            "Reading the PDF took too long. The file may be malformed or too complex."
+        ) from exc
+    except (IsolationCrashed, MemoryError) as exc:
+        raise DocumentRejected(
+            "Reading the PDF needed too much memory. The file may be malformed or too complex."
+        ) from exc
     except ValueError as exc:
         raise DocumentRejected(str(exc)) from exc
     except Exception as exc:

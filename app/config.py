@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)
     max_pdf_pages: int = Field(default=500, ge=1, le=10_000)
     max_pdf_chars: int = Field(default=500_000, ge=1, le=10_000_000)
+    # PDFs are parsed in a child process that is stopped after this long, and
+    # on Linux cannot use more than this much memory.
+    pdf_parse_timeout_seconds: float = Field(default=60.0, ge=1, le=600)
+    pdf_parse_memory_mb: int = Field(default=1024, ge=128, le=16_384)
 
     auth_requests_per_minute: int = Field(default=30, ge=1, le=100_000)
     upload_requests_per_minute: int = Field(default=8, ge=1, le=100_000)
