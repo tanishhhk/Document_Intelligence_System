@@ -43,3 +43,14 @@ def decode_access_token(token: str) -> Optional[dict]:
         )
     except jwt.PyJWTError:
         return None
+
+
+def token_user_id(token: str) -> Optional[str]:
+    """Return the user ID from a validly signed token, without a database lookup.
+
+    Only for keying rate limits. Authorization must use get_current_user,
+    which also checks revocation and that the user still exists.
+    """
+    payload = decode_access_token(token)
+    user_id = payload.get("user_id") if payload else None
+    return user_id if isinstance(user_id, str) and user_id else None

@@ -389,8 +389,10 @@ def test_rate_limit_rejects_excess_requests_from_the_same_peer():
     async def invoke_another_peer():
         return await invoke("203.0.113.11")
 
-    assert asyncio.run(invoke_another_peer()) == 429
-    assert len(limiter.requests) == 1
+    # A full tracking map evicts the least recently used caller instead of
+    # rejecting every new caller.
+    assert asyncio.run(invoke_another_peer()) == 200
+    assert list(limiter.requests) == [("ip", "203.0.113.11", "auth")]
 
 
 def test_pdf_processor_enforces_page_and_character_caps(monkeypatch, tmp_path):
