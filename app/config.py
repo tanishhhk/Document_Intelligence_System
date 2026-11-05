@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     )
 
     auto_migrate: bool = True
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_format: Literal["json", "text"] = "json"
     ingestion_worker_enabled: bool = True
 
     upload_dir: str = Field(default="./uploads", min_length=1)

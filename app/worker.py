@@ -12,11 +12,12 @@ import threading
 
 from app.config import settings
 from app.database import SessionLocal
+from app.logging_config import configure_logging
 from app.services.ingestion import IngestionWorker
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    configure_logging(settings.log_level, settings.log_format)
     stopped = threading.Event()
     for name in ("SIGINT", "SIGTERM"):
         if hasattr(signal, name):
