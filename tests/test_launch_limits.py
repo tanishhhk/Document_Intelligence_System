@@ -183,3 +183,13 @@ def test_responses_carry_security_headers(client):
     assert response.headers["x-frame-options"] == "DENY"
     assert "default-src 'none'" in response.headers["content-security-policy"]
     assert "content-security-policy" not in client.get("/docs").headers
+
+
+def test_browsers_may_send_the_profile_update(client):
+    preflight = client.options(
+        "/auth/me/profile",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT",
+                 "Access-Control-Request-Headers": "authorization,content-type"},
+    )
+    assert preflight.status_code == 200
+    assert "PUT" in preflight.headers["access-control-allow-methods"]
