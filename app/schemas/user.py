@@ -1,26 +1,44 @@
-from pydantic import BaseModel, EmailStr
 from datetime import datetime
 
-# Schema for user registration (what user sends)
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+
+def _validate_bcrypt_password_bytes(password: str) -> str:
+    # bcrypt considers only up to 72 input bytes; reject longer values instead
+    # of silently accepting ambiguous passwords or returning a server error.
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 UTF-8 bytes when hashed with bcrypt.")
+    return password
+
+
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=12, max_length=72)
 
-# Schema for user login (what user sends)
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        return _validate_bcrypt_password_bytes(value)
+
+
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=72)
 
-# Schema for user response (what we send back)
+    @field_validator("password")
+    @classmethod
+    def validate_password_bytes(cls, value: str) -> str:
+        return _validate_bcrypt_password_bytes(value)
+
+
 class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     email: str
     created_at: datetime
-    
-    class Config:
-        from_attributes = True
 
-# Schema for token response (after login)
+
 class Token(BaseModel):
     access_token: str
     token_type: str
