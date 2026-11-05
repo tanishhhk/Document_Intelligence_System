@@ -14,6 +14,7 @@ from app.services.embeddings import generate_single_embedding
 from app.services.llm import (
     NOT_FOUND_ANSWER,
     AnswerServiceError,
+    extractive_answer,
     cited_source_ids,
     generate_answer,
 )
@@ -107,23 +108,32 @@ def ask_question(
             detail="This document has no usable indexed text. Retry processing to index it again.",
         )
 
+    fallback_reason = None
     try:
-        raw_answer = generate_answer(question, result.chunks)
+        generated = generate_answer(question, result.chunks)
     except AnswerServiceError as exc:
-        status_code, detail, default_retry = _ANSWER_SERVICE_ERRORS[exc.kind]
         logger.warning("Answer generation failed.", extra={"kind": exc.kind})
-        retry_after = exc.retry_after or default_retry
-        raise HTTPException(
-            status_code=status_code,
-            detail=detail,
-            headers={"Retry-After": str(max(1, round(retry_after)))} if retry_after else None,
-        ) from exc
+        if settings.answer_fallback != "extractive":
+            status_code, detail, default_retry = _ANSWER_SERVICE_ERRORS[exc.kind]
+            retry_after = exc.retry_after or default_retry
+            raise HTTPException(
+                status_code=status_code,
+                detail=detail,
+                headers={"Retry-After": str(max(1, round(retry_after)))} if retry_after else None,
+            ) from exc
+        generated = None
+        fallback_reason = exc.kind
 
-    answer, cited = cited_source_ids(raw_answer, result.chunks)
-    found = bool(cited) or NOT_FOUND_ANSWER.lower() not in answer.lower()
+    if generated is None:
+        answer, cited = extractive_answer(result.chunks)
+        answer_status = "extractive"
+    else:
+        answer, cited = cited_source_ids(generated.text, result.chunks)
+        found = bool(cited) or NOT_FOUND_ANSWER.lower() not in answer.lower()
+        answer_status = "answered" if found else "not_found"
     return {
         "answer": answer,
-        "answer_status": "answered" if found else "not_found",
+        "answer_status": answer_status,
         "document_id": document.id,
         "document_name": document.filename,
         "sources": [
@@ -142,6 +152,8 @@ def ask_question(
             "chunks_searched": result.searched,
             "chunks_skipped": result.skipped,
             "top_k_used": len(result.chunks),
-            "model": settings.gemini_model,
+            "provider": generated.provider if generated else None,
+            "model": generated.model if generated else None,
+            "fallback_reason": fallback_reason,
         },
     }

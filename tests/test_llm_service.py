@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from app.services import llm
+from app.services.llm_providers import GeminiProvider
 from app.services.retrieval import RetrievedChunk
 
 
@@ -23,14 +24,15 @@ class _FakeClient:
 
 def test_generate_answer_uses_configured_model_and_separate_instructions(monkeypatch):
     fake = _FakeClient("  Sales increased [S1].  ")
-    monkeypatch.setattr(llm, "_get_client", lambda: fake)
-    monkeypatch.setattr(llm.settings, "gemini_model", "gemini-3.8-flash")
+    provider = GeminiProvider("key", "gemini-3.8-flash", 1024, 20, "low")
+    provider._client = fake
+    monkeypatch.setattr(llm, "_providers_cache", [provider])
 
     answer = llm.generate_answer(
         "What does the report say?", [_source("S1", "The report states that sales increased.", 4)]
     )
 
-    assert answer == "Sales increased [S1]."
+    assert answer == llm.Answer("Sales increased [S1].", "gemini", "gemini-3.8-flash")
     assert fake.calls["model"] == "gemini-3.8-flash"
     assert fake.calls["config"].system_instruction == llm.SYSTEM_INSTRUCTION
     assert '<source id="S1" page="4">' in fake.calls["contents"]

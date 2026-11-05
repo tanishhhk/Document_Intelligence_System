@@ -5,8 +5,9 @@
 Registers a throwaway user, uploads a generated PDF, waits for the worker to
 process it with the real embedding model, checks paging, retrieval and
 cross-user isolation, and deletes the document. When the deployment has no
-valid Gemini key, asking a question must fail with the misconfiguration
-error rather than a fake success. Exits non-zero on the first failed check.
+working answer provider, asking a question must return the labelled
+extractive fallback built from the retrieved passages, not a fake answer.
+Exits non-zero on the first failed check.
 """
 import os
 import sys
@@ -88,8 +89,13 @@ def main():
         check(ask.status_code == 200 and body["answer_status"] == "answered", "question is answered")
         check(any(s["cited"] and s["page_start"] == 4 for s in body["sources"]), "answer cites page 4")
     else:
-        check(ask.status_code == 500 and "not configured" in ask.json()["detail"],
-              "an invalid Gemini key is reported as misconfiguration")
+        body = ask.json()
+        check(ask.status_code == 200 and body["answer_status"] == "extractive",
+              "without a working provider the answer is the labelled extractive fallback")
+        check(body["metadata"]["fallback_reason"] == "misconfigured" and body["metadata"]["provider"] is None,
+              "the fallback reports why no provider answered")
+        check("Singapore" in body["answer"] and any(s["page_start"] == 4 for s in body["sources"]),
+              "the fallback quotes the relevant passage from page 4")
 
     check(client.delete(f"/documents/{document_id}", headers=owner).status_code == 200, "delete")
     check(client.get(f"/documents/{document_id}", headers=owner).status_code == 404, "deleted document is gone")

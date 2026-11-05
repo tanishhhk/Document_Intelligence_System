@@ -56,6 +56,10 @@ A document can contain text written to manipulate the model, such as "ignore pre
 
 A PDF signature check does not make a file safe to parse. Parsing runs in a child process with a time limit and, on Linux, a memory limit (`RLIMIT_DATA`); a file that exceeds either fails with an error instead of stalling or exhausting the worker. The child runs with the same user and file system access as the worker, so this limits resource use rather than sandboxing the parser. Windows has no memory limit.
 
+### Third-party model providers
+
+Answering a question sends the retrieved passages, which are document text, to the configured provider. Hosted free tiers may keep or train on that data. For confidential documents use a local provider (Ollama) and leave hosted providers unconfigured. Provider API keys are read from the environment and never logged.
+
 ### Clipboard attacks
 
 The backend has no clipboard feature and does not access browser clipboard contents. Clipboard handling, if introduced in a frontend, needs a separate client-side review.

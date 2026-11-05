@@ -14,6 +14,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
 from app.services.auth import token_user_id
 from app.services.ingestion import IngestionWorker
+from app.services.llm import configured_providers
 
 configure_logging(settings.log_level, settings.log_format)
 
@@ -86,6 +87,9 @@ def readiness_check():
             checks["schema"] = "current" if schema_is_current(connection) else "outdated"
     except Exception:
         checks["database"] = "unavailable"
+
+    # Informational: with no provider, questions get the extractive fallback.
+    checks["answer_providers"] = [p.name for p in configured_providers()] or "none"
 
     worker = getattr(app.state, "ingestion_worker", None)
     if not settings.ingestion_worker_enabled:

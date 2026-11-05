@@ -15,6 +15,7 @@ from app.main import app
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.services import embeddings, ingestion, llm
+from app.services.retrieval import RetrievedChunk
 from app.utils.pdf_processor import extract_pages
 from app.utils.text_processor import chunk_pages
 from tests.eval.rag_dataset import DOCUMENTS, QUESTIONS, build_pdf
@@ -206,7 +207,7 @@ def answer_with(monkeypatch):
 
         def fake_generate(question, sources):
             seen["sources"] = sources
-            return answer
+            return llm.Answer(answer, "fake", "fake-model")
 
         monkeypatch.setattr(chat_api, "generate_answer", fake_generate)
         return seen
@@ -320,6 +321,7 @@ def test_instructions_inside_a_document_reach_the_model_only_as_source_data(
 def test_each_answer_service_failure_has_its_own_response(
     document_with_chunks, monkeypatch, kind, retry_after, status_code, header
 ):
+    monkeypatch.setattr(chat_api.settings, "answer_fallback", "none")
     document_id, headers, add = document_with_chunks
     add(("The fee is 30 euros.", vector(0), {}))
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
@@ -373,3 +375,45 @@ def test_a_multi_page_pdf_is_indexed_with_page_numbers(db_session_factory, auth_
     assert {c.embedding_model for c in chunks} == {embeddings.EMBEDDING_MODEL}
     singapore = [c for c in chunks if "Singapore" in c.chunk_text and "data centre" in c.chunk_text]
     assert singapore and all(c.page_start == 4 for c in singapore)
+
+
+@pytest.mark.parametrize("kind", ["busy", "timeout", "unavailable", "misconfigured", "rejected", "empty"])
+def test_when_no_provider_answers_the_best_passages_are_returned_and_labelled(
+    document_with_chunks, monkeypatch, kind
+):
+    monkeypatch.setattr(chat_api.settings, "answer_fallback", "extractive")
+    document_id, headers, add = document_with_chunks
+    add(("The fee is 30 euros per month.", vector(0), {}), ("Payment is due on the 1st.", vector(1), {}))
+    monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
+
+    def failing(_question, _sources):
+        raise llm.AnswerServiceError(kind)
+
+    monkeypatch.setattr(chat_api, "generate_answer", failing)
+    response = _ask(headers, document_id)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["answer_status"] == "extractive"
+    assert body["answer"].startswith("An AI answer is not available right now.")
+    assert "[S1] (page 1): The fee is 30 euros per month." in body["answer"]
+    assert body["metadata"]["fallback_reason"] == kind
+    assert body["metadata"]["provider"] is None
+    assert all(source["cited"] for source in body["sources"])
+
+
+def test_the_extractive_fallback_shortens_long_passages():
+    long_text = "word " * 500
+    answer, cited = llm.extractive_answer([RetrievedChunk("S1", 0, long_text, None, None, 0.5)])
+    passage = answer.split("[S1]: ")[1]
+    assert passage.endswith("...")
+    assert len(passage) <= 404
+    assert cited == ["S1"]
+
+
+def test_answers_report_the_provider_and_model_used(document_with_chunks, answer_with):
+    document_id, headers, add = document_with_chunks
+    add(("The fee is 30 euros.", vector(0), {}))
+    answer_with("The fee is 30 euros [S1].")
+    metadata = _ask(headers, document_id).json()["metadata"]
+    assert (metadata["provider"], metadata["model"], metadata["fallback_reason"]) == ("fake", "fake-model", None)
