@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth, chat, documents
 from app.config import settings
 from app.database import run_migrations
+from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.services.auth import token_user_id
 
 
 @asynccontextmanager
@@ -23,6 +25,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middleware added last runs first. CORS is outermost so browsers can read
+# 429 and 413 responses, and preflight requests do not count toward limits.
+app.add_middleware(BodySizeLimitMiddleware, settings=settings)
+app.add_middleware(RateLimitMiddleware, settings=settings, token_subject=token_user_id)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -31,7 +37,6 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "Accept"],
     max_age=600,
 )
-app.add_middleware(RateLimitMiddleware, settings=settings)
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
