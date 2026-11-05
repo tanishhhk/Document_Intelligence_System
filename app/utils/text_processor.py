@@ -108,7 +108,14 @@ def _segments(page_number: int, text: str) -> list[_Segment]:
 
 
 def _split_long(segment: _Segment, size: int) -> list[_Segment]:
-    words, pieces, current = segment.text.split(), [], ""
+    # Words longer than a chunk (URLs, encoded data) are cut into pieces
+    # rather than truncated, so no text is lost.
+    words = [
+        word[start : start + size]
+        for word in segment.text.split()
+        for start in range(0, len(word), size)
+    ]
+    pieces, current = [], ""
     for word in words:
         if current and len(current) + 1 + len(word) > size:
             pieces.append(current)
@@ -117,7 +124,7 @@ def _split_long(segment: _Segment, size: int) -> list[_Segment]:
             current = f"{current} {word}" if current else word
     if current:
         pieces.append(current)
-    return [_Segment(piece[:size], segment.page, segment.kind) for piece in pieces]
+    return [_Segment(piece, segment.page, segment.kind) for piece in pieces]
 
 
 def _join(segments: list[_Segment]) -> str:
@@ -160,10 +167,10 @@ def chunk_pages(
     def length(items):
         return len(_join(items))
 
-    def emit(keep_overlap: bool):
+    def emit(keep_overlap: bool) -> bool:
         nonlocal current
         if not any(item.kind != "heading" for item in current):
-            return  # Wait until a heading has some content after it.
+            return False  # Wait until a heading has some content after it.
         chunks.append(
             Chunk(
                 _join(current),
@@ -178,6 +185,7 @@ def chunk_pages(
                     break
                 carried.insert(0, item)
         current = carried
+        return True
 
     for segment in segments:
         if current:
@@ -187,8 +195,9 @@ def chunk_pages(
             elif segment.page != current[-1].page and filled >= chunk_size * _PAGE_BREAK_FILL:
                 emit(keep_overlap=False)
             elif filled + 1 + len(segment.text) > chunk_size:
-                emit(keep_overlap=True)
-                if current and length([*current, segment]) > chunk_size:
+                # Drop the carried overlap if it leaves no room, but never a
+                # heading that has not been emitted yet.
+                if emit(keep_overlap=True) and current and length([*current, segment]) > chunk_size:
                     current = []
         current.append(segment)
 
