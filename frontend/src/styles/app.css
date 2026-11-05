@@ -65,10 +65,15 @@
   font-size: var(--step-3);
 }
 
+.onboarding-page {
+  position: relative;
+}
+
 .onboarding-step {
-  color: var(--pencil);
-  font-size: var(--step--1);
-  font-weight: 700;
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-6);
+  font-size: var(--step-1);
 }
 
 .onboarding-lede {
@@ -97,6 +102,7 @@
 
 .choice {
   display: grid;
+  align-content: start;
   gap: var(--space-1);
   text-align: left;
   padding: var(--space-4) var(--space-5);
@@ -188,7 +194,7 @@
   min-height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
-  background: var(--page-shade);
+  background: var(--ink-2);
 }
 
 .topbar {
@@ -547,14 +553,14 @@
 }
 
 .chapter-source {
-  color: var(--marigold-text);
-  font-weight: 700;
-  font-size: var(--step--1);
+  font-family: var(--font-display);
+  font-style: italic;
+  color: var(--pencil);
+  margin-top: calc(var(--space-4) * -1);
 }
 
 .chapter-title {
   font-size: var(--step-4);
-  margin-top: calc(var(--space-3) * -1);
 }
 
 .scene h3 {
@@ -652,8 +658,10 @@
   padding: var(--space-3) 0;
 }
 
-.library-row.is-current .library-name {
+.library-row.is-current .library-name span {
   background: linear-gradient(var(--highlight-soft), var(--highlight-soft)) no-repeat 0 85% / 100% 40%;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .library-open {

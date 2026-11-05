@@ -152,7 +152,7 @@ p {
 .button-primary {
   background: var(--highlight);
   color: var(--ink);
-  box-shadow: 0 2px 0 rgba(143, 82, 0, 0.35);
+  box-shadow: 0 1px 2px rgba(143, 82, 0, 0.25), 0 8px 16px -10px rgba(143, 82, 0, 0.5);
 }
 
 .button-primary:hover:not(:disabled) {

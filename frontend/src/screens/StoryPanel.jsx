@@ -140,10 +140,10 @@ export default function StoryPanel({ document, focus, onUsed }) {
 
       {hasStory && (
         <article className="chapter">
+          <h2 className="chapter-title">{job.title}</h2>
           <p className="chapter-source">
             {job.story_source === "ai" ? "Told by your narrator" : "Told in the document's own words"}
           </p>
-          <h2 className="chapter-title">{job.title}</h2>
           {job.scenes.map((scene, index) => (
             <section key={index} className="scene">
               <h3>{scene.heading}</h3>

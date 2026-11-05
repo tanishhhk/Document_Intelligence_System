@@ -25,7 +25,9 @@ function Row({ document, current, onOpen, onDeleted }) {
   return (
     <li className={`library-row${current ? " is-current" : ""}`}>
       <button type="button" className="library-open" disabled={!ready} onClick={() => onOpen(document)}>
-        <span className="library-name">{document.filename}</span>
+        <span className="library-name">
+          <span>{document.filename}</span>
+        </span>
         <span className="library-meta">
           <span>{ready ? `${document.page_count} ${document.page_count === 1 ? "page" : "pages"}` : STATUS[document.status]}</span>
           <span>{new Date(document.upload_date + "Z").toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>

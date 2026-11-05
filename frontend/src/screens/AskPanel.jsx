@@ -49,13 +49,25 @@ function AnswerText({ text, sources }) {
 }
 
 const WORD = /[a-z0-9]{4,}/g;
+const HEADING = /^(section|chapter|part|article|clause)\s+[\d.]+\.?$/i;
 
-// Highlight the sentence of a passage that shares the most words with the answer.
-function Excerpt({ source, answer }) {
-  const sentences = source.preview.trim().split(/(?<=[.!?])\s+/);
-  const answerWords = new Set(answer.toLowerCase().match(WORD) || []);
-  const scores = sentences.map((sentence) => (sentence.toLowerCase().match(WORD) || []).filter((w) => answerWords.has(w)).length);
-  const best = scores.indexOf(Math.max(...scores));
+// Highlight the sentence of a passage that best matches the answer (or, for the
+// no-AI fallback, the question). Headings and fragments are never highlighted.
+function Excerpt({ source, against }) {
+  const cut = source.preview.length >= 360;
+  let text = source.preview.trim();
+  if (cut) text = `${text.slice(0, text.lastIndexOf(" ")).trimEnd()}…`;
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  // Compare word stems (first five letters), so "expense" matches "expenses".
+  const stems = (value) => (value.toLowerCase().match(WORD) || []).map((word) => word.slice(0, 5));
+  const wanted = new Set(stems(against));
+  const scores = sentences.map((sentence) =>
+    sentence.split(/\s+/).length < 5 || HEADING.test(sentence.trim())
+      ? 0
+      : stems(sentence).filter((stem) => wanted.has(stem)).length,
+  );
+  const top = Math.max(...scores);
+  const best = top > 0 ? scores.indexOf(top) : -1;
   return (
     <blockquote className="excerpt">
       <span className="excerpt-page folio">{pagesOf(source)}</span>
@@ -65,13 +77,12 @@ function Excerpt({ source, answer }) {
             {index === best ? <span className="hl">{sentence}</span> : sentence}{" "}
           </span>
         ))}
-        {source.preview.length >= 200 ? "..." : ""}
       </p>
     </blockquote>
   );
 }
 
-function Answer({ reply }) {
+function Answer({ reply, question }) {
   const extractive = reply.answer_status === "extractive";
   const shown = extractive ? reply.sources : reply.sources.filter((source) => source.cited);
   const text = extractive
@@ -83,7 +94,7 @@ function Answer({ reply }) {
       {shown.length > 0 && (
         <div className="excerpts">
           {shown.map((source) => (
-            <Excerpt key={source.source_id} source={source} answer={extractive ? "" : reply.answer} />
+            <Excerpt key={source.source_id} source={source} against={extractive ? question : reply.answer} />
           ))}
         </div>
       )}
@@ -146,7 +157,7 @@ export default function AskPanel({ document, focus, onUsed }) {
           {turns.map((turn, index) => (
             <li key={index} className="turn">
               <p className="turn-question">{turn.question}</p>
-              {turn.reply && <Answer reply={turn.reply} />}
+              {turn.reply && <Answer reply={turn.reply} question={turn.question} />}
               {turn.error && <p className="field-error" role="alert">{turn.error}</p>}
               {!turn.reply && !turn.error && (
                 <p className="turn-wait" role="status">
@@ -172,7 +183,7 @@ export default function AskPanel({ document, focus, onUsed }) {
         <input
           id="question"
           className="input"
-          placeholder="Ask a question about this document"
+          placeholder="Ask about this document"
           maxLength={1000}
           value={question}
           onChange={(event) => setQuestion(event.target.value)}

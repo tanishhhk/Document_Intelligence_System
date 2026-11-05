@@ -147,7 +147,7 @@ def ask_question(
                 "page_start": chunk.page_start,
                 "page_end": chunk.page_end,
                 "similarity_score": round(chunk.score, 6),
-                "preview": chunk.text[:200],
+                "preview": chunk.text[:360],
                 "cited": chunk.source_id in cited,
             }
             for chunk in result.chunks

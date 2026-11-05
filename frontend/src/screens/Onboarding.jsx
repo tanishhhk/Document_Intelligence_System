@@ -51,7 +51,7 @@ export default function Onboarding({ user, onDone, onSkip }) {
       </header>
 
       <section className="onboarding-page" aria-live="polite">
-        <p className="onboarding-step">Step {step + 1} of 3</p>
+        <p className="onboarding-step folio" aria-label={`Step ${step + 1} of 3`}>{step + 1} of 3</p>
 
         {step === 0 && (
           <>
@@ -102,8 +102,10 @@ export default function Onboarding({ user, onDone, onSkip }) {
           <>
             <h1>Bring your first document.</h1>
             <p className="onboarding-lede">
-              Any text PDF: a {focus ? focusPhrase(focus) : "work"} document, a chapter, a contract, a
-              manual. Or start with our sample to see how it works.
+              {(() => {
+                const phrase = focus ? focusPhrase(focus) : "work";
+                return `Any text PDF: ${/^[aeiou]/i.test(phrase) ? "an" : "a"} ${phrase} document, a chapter, a contract, a manual. Or start with our sample to see how it works.`;
+              })()}
             </p>
             <UploadBox offerSample onReady={(document) => onDone(null, document, true)} />
           </>
