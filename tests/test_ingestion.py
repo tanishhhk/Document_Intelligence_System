@@ -13,6 +13,7 @@ from app.main import app
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.services import ingestion
+from tests.fakes import indexed
 
 PDF = b"%PDF-1.7\nquarterly report"
 
@@ -20,7 +21,7 @@ PDF = b"%PDF-1.7\nquarterly report"
 @pytest.fixture()
 def extractor(monkeypatch):
     """Replace PDF parsing and embedding; tests choose the behavior per call."""
-    state = {"calls": 0, "behavior": lambda data: (["First passage", "Second passage"], [[1.0, 0.0], [0.0, 1.0]])}
+    state = {"calls": 0, "behavior": lambda data: indexed("First passage", "Second passage")}
 
     def fake(data):
         state["calls"] += 1
@@ -120,7 +121,7 @@ def test_rejected_documents_fail_with_a_reason_and_can_be_retried(
     assert retried.status_code == 200
     assert retried.json()["status"] == "queued"
 
-    extractor["behavior"] = lambda _data: (["Passage"], [[1.0, 0.0]])
+    extractor["behavior"] = lambda _data: indexed("Passage")
     ingestion.process_pending(db_session_factory)
     assert _document(db_session_factory, created["id"]).status == "completed"
 
@@ -206,7 +207,7 @@ def test_a_worker_that_lost_its_lease_does_not_store_results(
 
     def lose_lease_while_working(_data):
         _set(db_session_factory, created["id"], lease_token="newer-worker")
-        return ["Stale passage"], [[1.0, 0.0]]
+        return indexed("Stale passage")
 
     extractor["behavior"] = lose_lease_while_working
     ingestion.process_pending(db_session_factory, limit=1)
@@ -225,7 +226,7 @@ def test_reprocessing_replaces_chunks_instead_of_duplicating_them(
     ingestion.process_pending(db_session_factory)
     _set(db_session_factory, created["id"], status="queued")
 
-    extractor["behavior"] = lambda _data: (["Only passage"], [[1.0, 0.0]])
+    extractor["behavior"] = lambda _data: indexed("Only passage")
     ingestion.process_pending(db_session_factory)
 
     assert [c.chunk_text for c in _chunks(db_session_factory, created["id"])] == ["Only passage"]
@@ -241,7 +242,7 @@ def test_deleting_a_document_while_it_is_processed_leaves_nothing_behind(
 
     def delete_mid_processing(_data):
         assert client.delete(f"/documents/{created['id']}", headers=headers).status_code == 200
-        return ["Passage"], [[1.0, 0.0]]
+        return indexed("Passage")
 
     extractor["behavior"] = delete_mid_processing
     ingestion.process_pending(db_session_factory)

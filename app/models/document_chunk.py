@@ -13,6 +13,11 @@ class DocumentChunk(Base):
     chunk_index = Column(Integer, nullable=False)  # Which chunk number (0, 1, 2...)
     chunk_text = Column(Text, nullable=False)
     embedding = Column(Text, nullable=False)  # Stored as JSON string
+    # Null for chunks indexed before page tracking existed.
+    page_start = Column(Integer, nullable=True)
+    page_end = Column(Integer, nullable=True)
+    embedding_model = Column(String(100), nullable=False)
+    embedding_dim = Column(Integer, nullable=False)
     
     def set_embedding(self, embedding_list):
         """Convert list to JSON string for storage"""

@@ -14,13 +14,13 @@ A FastAPI service for uploading PDF documents, searching their text, and answeri
 ## Request flow
 
 1. A user uploads a PDF. The service stores it and queues the document.
-2. A background worker extracts selectable text and splits it into chunks.
-3. The embedding model converts chunks to vectors, which are stored with the document.
-4. A question is embedded and compared with the document chunks.
-5. The most relevant chunks are sent to Gemini as context.
-6. The response includes source chunk references and similarity scores.
+2. A background worker extracts selectable text page by page and splits it into chunks along sentence, table-row and heading boundaries. Each chunk records its page range.
+3. The embedding model converts chunks to vectors, which are stored with the chunk and the name of the model that produced them.
+4. A question is embedded and compared with the document's chunks.
+5. The most relevant chunks are sent to Gemini as numbered sources, separate from the instructions, which tell the model to answer only from the sources, treat them as untrusted data, and cite them.
+6. Citations to sources that were not retrieved are removed. The response lists each source with its page range and whether the answer cites it.
 
-The current retrieval implementation compares stored vectors in Python. It does not use a dedicated vector database. Scanned PDFs need OCR, which is not included.
+The current retrieval implementation compares stored vectors in Python. It does not use a dedicated vector database. At the maximum document size (about 1,500 chunks) one retrieval takes roughly 220 ms on a laptop. Scanned PDFs need OCR, which is not included.
 
 ## Stack
 
@@ -199,7 +199,30 @@ Deletes the user's document, chunks, and stored PDF.
 }
 ```
 
-The question is limited to 4,000 characters and `top_k` must be between 1 and 10. The response includes the answer, selected source chunks, similarity scores, and model metadata.
+The question is limited to 4,000 characters and `top_k` must be between 1 and 10.
+
+```json
+{
+  "answer": "Customers may cancel within 30 days for a full refund [S1].",
+  "answer_status": "answered",
+  "document_id": "...",
+  "document_name": "policy.pdf",
+  "sources": [
+    {
+      "source_id": "S1",
+      "chunk_index": 4,
+      "page_start": 2,
+      "page_end": 2,
+      "similarity_score": 0.71,
+      "preview": "Section 2. Cancellation ...",
+      "cited": true
+    }
+  ],
+  "metadata": {"chunks_searched": 26, "chunks_skipped": 0, "top_k_used": 3, "model": "gemini-3.8-flash"}
+}
+```
+
+`answer_status` is `not_found` when the document does not contain the answer. Every `[S#]` in the answer refers to an entry in `sources`. Chunks indexed before page tracking was added have `null` page numbers. Chunks with unusable vectors, or vectors from a different embedding model, are skipped and counted in `chunks_skipped`.
 
 ## Tests
 
@@ -208,6 +231,24 @@ Run the test suite from the repository root:
 ```bash
 pytest -q
 ```
+
+### Evaluation
+
+`tests/eval/rag_dataset.py` holds three multi-page documents and 37 labelled questions: direct facts, similar but wrong passages, tables, answers that need several passages, questions the document cannot answer, and a prompt injection inside a document.
+
+```bash
+python scripts/evaluate_retrieval.py                     # retrieval only, no API calls
+GEMINI_API_KEY=... python scripts/evaluate_answers.py    # full answers; one Gemini call per question
+```
+
+Retrieval results with `all-MiniLM-L6-v2` on the 33 answerable questions:
+
+| Chunker | Chunks | hit@1 | hit@3 | MRR | Top chunk on the right page |
+|---|---|---|---|---|---|
+| Fixed 1,000 characters, 200 overlap | 15 | 0.758 | 1.000 | 0.904 | not tracked |
+| Sentence, heading and page aware | 26 | 0.939 | 0.970 | 0.985 | 0.970 |
+
+The set is small and synthetic, so treat these numbers as a regression check rather than a general quality claim.
 
 Set `TEST_DATABASE_URL` to run the API tests against a disposable PostgreSQL database, and `TEST_POSTGRES_URL` to include PostgreSQL in the migration tests. CI runs both.
 
@@ -219,7 +260,8 @@ The tests use a local SQLite database by default and mock the embedding and answ
 - Behind a reverse proxy, start Uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy address>` so the limiter sees client addresses instead of the proxy's.
 - Rate limiting and upload caps do not replace network-level DDoS protection.
 - Scanned PDFs need an OCR implementation.
-- Retrieval scans stored vectors in Python, which may become slow as the number of chunks grows.
+- Retrieval scans stored vectors in Python. That is fast enough for one document at the size limits, but would not scale to searching many documents at once.
+- Changing the embedding model requires re-embedding every document. Chunks from another model are skipped, not compared.
 - This repository is a prototype and has not undergone a formal security audit.
 
 See [SECURITY.md](SECURITY.md) for details about covered attack surfaces and remaining limits.

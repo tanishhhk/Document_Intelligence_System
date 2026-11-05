@@ -20,9 +20,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.config import settings
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
-from app.services.embeddings import generate_embeddings
-from app.utils.pdf_processor import extract_text_from_pdf
-from app.utils.text_processor import chunk_text as split_text
+from app.services.embeddings import EMBEDDING_DIMENSION, EMBEDDING_MODEL, generate_embeddings
+from app.utils.pdf_processor import extract_pages
+from app.utils.text_processor import chunk_pages
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,12 @@ class DocumentRejected(ValueError):
 
 
 def extract_and_embed_pdf(pdf_bytes: bytes):
-    """Extract, chunk and embed a bounded amount of PDF text."""
+    """Extract, chunk and embed a bounded amount of PDF text.
+
+    Returns (chunks, embeddings, page_count).
+    """
     try:
-        extracted_text = extract_text_from_pdf(
+        pages = extract_pages(
             pdf_bytes,
             max_pages=settings.max_pdf_pages,
             max_chars=settings.max_pdf_chars,
@@ -58,17 +61,15 @@ def extract_and_embed_pdf(pdf_bytes: bytes):
             "The PDF could not be read. Check that it is a valid, unencrypted PDF."
         ) from exc
 
-    if not extracted_text or not extracted_text.strip():
+    if not any(text.strip() for _number, text in pages):
         raise DocumentRejected("No selectable text was found. Scanned PDFs need OCR.")
 
-    chunks = split_text(extracted_text)
+    chunks = chunk_pages(pages)
     if not chunks:
         raise DocumentRejected("The PDF did not produce any text chunks.")
 
-    embeddings = generate_embeddings(chunks)
-    if len(embeddings) != len(chunks):
-        raise RuntimeError("Embedding generation returned an unexpected number of vectors.")
-    return chunks, embeddings
+    embeddings = generate_embeddings([chunk.text for chunk in chunks])
+    return chunks, embeddings, len(pages)
 
 
 def _claimable(now: int):
@@ -178,7 +179,7 @@ def process_document(session_factory, document_id: str, token: str) -> None:
         return
 
     try:
-        chunks, embeddings = extract_and_embed_pdf(pdf_bytes)
+        chunks, embeddings, page_count = extract_and_embed_pdf(pdf_bytes)
     except DocumentRejected as exc:
         _record_failure(session_factory, document_id, token, str(exc), attempts)
         logger.info("Document rejected during processing.", extra={"document_id": document_id})
@@ -194,15 +195,19 @@ def process_document(session_factory, document_id: str, token: str) -> None:
             db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).delete(
                 synchronize_session=False
             )
-            for index, (text, embedding) in enumerate(zip(chunks, embeddings)):
-                chunk = DocumentChunk(
+            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                row = DocumentChunk(
                     id=str(uuid.uuid4()),
                     document_id=document_id,
                     chunk_index=index,
-                    chunk_text=text,
+                    chunk_text=chunk.text,
+                    page_start=chunk.page_start,
+                    page_end=chunk.page_end,
+                    embedding_model=EMBEDDING_MODEL,
+                    embedding_dim=EMBEDDING_DIMENSION,
                 )
-                chunk.set_embedding(embedding)
-                db.add(chunk)
+                row.set_embedding(embedding)
+                db.add(row)
             db.flush()
             owned = _finish(
                 db,
@@ -212,6 +217,7 @@ def process_document(session_factory, document_id: str, token: str) -> None:
                     Document.status: COMPLETED,
                     Document.error_message: None,
                     Document.chunk_count: len(chunks),
+                    Document.page_count: page_count,
                     Document.processed_at: datetime.now(timezone.utc).replace(tzinfo=None),
                 },
             )
