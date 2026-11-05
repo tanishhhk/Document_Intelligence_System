@@ -405,3 +405,13 @@ def test_a_real_video_is_rendered_from_slides_and_audio(tmp_path):
         handle.writeframes(b"\x00\x00" * 8000 * 5)
     path = compose(["A title", "Scene one", "Scene two"], [2, 5, 5], str(audio), str(tmp_path / "out.mp4"))
     assert os.path.getsize(path) > 1000
+
+
+def test_fallback_quotes_never_run_a_heading_into_a_sentence():
+    text = "Section 3. Remote work\nEmployees in eligible roles may work remotely for up to 2 days per week.\n"
+    passages = story_service.sample_passages([(text, 2, 2), (text.replace("2 days", "3 days"), 2, 2)], 5000)
+    story = story_service.extractive_story("handbook.pdf", passages)
+    joined = " ".join(t for _h, t in story.scenes)
+    assert "Remote work Employees" not in joined
+    assert "Employees in eligible roles may work remotely" in joined
+    assert joined.count("Around page 2") <= 1

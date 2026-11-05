@@ -199,7 +199,22 @@ def _key_sentences(passages: list[Passage], count: int) -> list[tuple[str, int |
     """The most informative whole sentences, in document order, with their page."""
     candidates = []
     for order, passage in enumerate(passages):
-        for position, sentence in enumerate(_SENTENCE_END.split(" ".join(passage.text.split()))):
+        # Headings ("Section 3. Remote work") are not prose; split the text at
+        # them so no quoted sentence runs a heading into its first line.
+        segments, current = [], []
+        for line in passage.text.splitlines():
+            if _is_heading(line):
+                segments.append(current)
+                current = []
+            else:
+                current.append(line)
+        segments.append(current)
+        sentences = [
+            sentence
+            for segment in segments
+            for sentence in _SENTENCE_END.split(" ".join(" ".join(segment).split()))
+        ]
+        for position, sentence in enumerate(sentences):
             if not 40 <= len(sentence) <= 300 or sentence[-1] not in ".!?":
                 continue
             letters = sum(char.isalpha() for char in sentence)
@@ -209,6 +224,15 @@ def _key_sentences(passages: list[Passage], count: int) -> list[tuple[str, int |
             candidates.append((score, (order, position), sentence, passage.page_start))
     best = sorted(candidates, key=lambda item: -item[0])[:count]
     return [(sentence, page) for _score, _order, sentence, page in sorted(best, key=lambda item: item[1])]
+
+
+def _is_heading(line: str) -> bool:
+    words = line.split()
+    return 0 < len(words) <= 8 and line.rstrip()[-1:] not in ".!?:;,"
+
+
+def _finale_where(page: int | None, previous: int | None) -> str:
+    return f"On page {page}, as the final pages close in" if page and page != previous else "As the final pages close in"
 
 
 def _where(page: int | None) -> str:
@@ -241,7 +265,8 @@ def extractive_story(filename: str, passages: list[Passage]) -> Story:
     if len(quotes) > 1 and quotes[-1]:
         scenes.append((
             "The grand finale",
-            f"{_where(quotes[-1][0][1])}, as the final pages close in, it lands here: {quoted(quotes[-1])}",
+            f"{_finale_where(quotes[-1][0][1], quotes[1][0][1] if len(quotes) > 2 and quotes[1] else None)}, "
+            f"it lands here: {quoted(quotes[-1])}",
         ))
     if not scenes:
         # Quoted exactly, so only whitespace is normalised.

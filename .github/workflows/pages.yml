@@ -37,13 +37,14 @@ jobs:
           VITE_BASE: /${{ github.event.repository.name }}/
         run: npm run build
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.API_URL != ''
         with:
           path: frontend/dist
 
+  # Publishes only once API_URL points at the hosted API (scripts/go_live.py sets it).
   deploy:
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.API_URL != ''
     runs-on: ubuntu-latest
     permissions:
       pages: write
