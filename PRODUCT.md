@@ -53,7 +53,7 @@ Upload a PDF, ask questions answered only from that document with the pages they
 ## Brand Commitments
 
 - **Name:** guruCool. The logo is being redesigned (owner's request, 2026-11-06); the old wordmark ("guru" over a marigold swipe) is reference, not a commitment.
-- **Typefaces:** Fraunces for display and Karla for body, which the owner confirmed ("font is fine"). JetBrains Mono is used for small labels.
+- **Typefaces:** Fraunces for display and Karla for body, which the owner confirmed ("font is fine").
 - **Copy:** no emojis, no em dashes and no en dashes in the interface or copy; ranges are written "5 to 10".
 - **Voice:** plain and warm. Stories may be witty, but never invent facts.
 
