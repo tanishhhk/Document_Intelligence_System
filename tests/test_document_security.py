@@ -273,6 +273,7 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
     assert body["document_name"] == "policy.pdf"
     assert body["sources"][0]["chunk_index"] == 0
     assert body["metadata"]["top_k_used"] == 1
+    assert body["metadata"]["model"] == settings.gemini_model
 
 
 def test_top_k_and_question_length_are_bounded(client, users_and_tokens):

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, ge=1, le=1440)
 
     GEMINI_API_KEY: str = Field(min_length=1)
+    gemini_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=100)
 
     cors_origins: list[str] = Field(
         default_factory=lambda: [
