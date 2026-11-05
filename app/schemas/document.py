@@ -12,6 +12,7 @@ class DocumentResponse(BaseModel):
     status: str
     error_message: str | None = None
     chunk_count: int | None = None
+    page_count: int | None = None
     processed_at: datetime | None = None
 
 # Schema for listing all documents

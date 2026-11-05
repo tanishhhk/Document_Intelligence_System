@@ -22,6 +22,7 @@ class Document(Base):
     lease_token = Column(String(36), nullable=True)
     lease_expires_at = Column(Integer, nullable=True)
     chunk_count = Column(Integer, nullable=True)
+    page_count = Column(Integer, nullable=True)
     processed_at = Column(DateTime, nullable=True)
     
     def __repr__(self):

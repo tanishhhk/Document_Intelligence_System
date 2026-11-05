@@ -13,6 +13,7 @@ from app.main import app
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.models.document import Document
 from app.models.upload_idempotency import UploadIdempotency
+from tests.fakes import indexed
 
 PDF_A = b"%PDF-1.7\nfirst document"
 PDF_B = b"%PDF-1.7\nsecond, different document"
@@ -24,7 +25,7 @@ def ingest_calls(monkeypatch):
 
     def fake_extract(path):
         calls.append(path)
-        return ["Example passage"], [[0.1, 0.2]]
+        return indexed("Example passage")
 
     monkeypatch.setattr(ingestion, "extract_and_embed_pdf", fake_extract)
     return calls

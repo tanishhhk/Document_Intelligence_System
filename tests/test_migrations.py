@@ -109,12 +109,24 @@ def _insert_sample_rows(engine):
         )
         for index in range(3):
             connection.execute(
-                text(
-                    "INSERT INTO document_chunks (id, document_id, chunk_index, chunk_text, embedding) "
-                    "VALUES (:id, 'd1', :index, 'text', '[1.0]')"
-                ),
-                {"id": f"c{index}", "index": index},
+                text(f"INSERT INTO document_chunks ({_chunk_columns(connection)}) VALUES ({_chunk_values(connection)})"),
+                {"id": f"c{index}", "document_id": "d1", "index": index},
             )
+
+
+def _has_chunk_metadata(connection):
+    columns = {column["name"] for column in inspect(connection).get_columns("document_chunks")}
+    return "embedding_model" in columns
+
+
+def _chunk_columns(connection):
+    columns = "id, document_id, chunk_index, chunk_text, embedding"
+    return columns + (", embedding_model, embedding_dim" if _has_chunk_metadata(connection) else "")
+
+
+def _chunk_values(connection):
+    values = ":id, :document_id, :index, 'text', '[1.0]'"
+    return values + (", 'all-MiniLM-L6-v2', 384" if _has_chunk_metadata(connection) else "")
 
 
 def _schema_differences(engine):
@@ -220,11 +232,8 @@ def test_chunks_cannot_reference_missing_documents(database_url):
         with pytest.raises(Exception, match="(?i)foreign key"):
             with engine.begin() as connection:
                 connection.execute(
-                    text(
-                        "INSERT INTO document_chunks (id, document_id, chunk_index, chunk_text, embedding) "
-                        "VALUES (:id, 'missing', 0, 'text', '[1.0]')"
-                    ),
-                    {"id": str(uuid.uuid4())},
+                    text(f"INSERT INTO document_chunks ({_chunk_columns(connection)}) VALUES ({_chunk_values(connection)})"),
+                    {"id": str(uuid.uuid4()), "document_id": "missing", "index": 0},
                 )
     finally:
         engine.dispose()
