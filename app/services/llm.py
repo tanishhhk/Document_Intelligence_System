@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from app.config import settings
+from app.services.lenses import ANSWER_FOCUS
 from app.services.llm_providers import FAILURE_PRIORITY, ProviderFailure, build_providers
 
 logger = logging.getLogger(__name__)
@@ -123,9 +124,15 @@ def story_providers() -> list:
     return _story_providers_cache
 
 
-def generate_answer(question: str, sources) -> Answer:
-    """Answer from the retrieved passages using the first provider that succeeds."""
-    return generate_text(SYSTEM_INSTRUCTION, build_user_message(question, sources))
+def generate_answer(question: str, sources, focus: str | None = None) -> Answer:
+    """Answer from the retrieved passages using the first provider that succeeds.
+
+    focus, from the user's onboarding choice, adds one line on what to emphasise.
+    """
+    system = SYSTEM_INSTRUCTION
+    if focus in ANSWER_FOCUS:
+        system = f"{SYSTEM_INSTRUCTION}\n- {ANSWER_FOCUS[focus]}"
+    return generate_text(system, build_user_message(question, sources))
 
 
 def generate_text(system_instruction: str, user_message: str, long_running: bool = False) -> Answer:

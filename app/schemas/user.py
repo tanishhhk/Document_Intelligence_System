@@ -37,6 +37,23 @@ class UserResponse(BaseModel):
     id: str
     email: str
     created_at: datetime
+    profession: str | None = None
+    focus: str | None = None
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profession: str = Field(min_length=1, max_length=20)
+    focus: str = Field(min_length=1, max_length=20)
+
+
+class UsageResponse(BaseModel):
+    limits: dict[str, int]
+    used: dict[str, int]
+    resets_in_seconds: int
+    max_documents: int
+    documents: int
 
 
 class Token(BaseModel):

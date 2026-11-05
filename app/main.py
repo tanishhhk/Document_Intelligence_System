@@ -12,6 +12,7 @@ from app.logging_config import configure_logging
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_context import RequestContextMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.services.auth import token_user_id
 from app.services.ingestion import IngestionWorker
 from app.services.llm import configured_providers
@@ -60,6 +61,7 @@ app.add_middleware(
 )
 # Outermost, so every response, including 413 and 429, has a request ID.
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])

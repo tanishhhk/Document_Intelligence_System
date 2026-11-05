@@ -9,6 +9,7 @@ import logging
 import re
 from dataclasses import dataclass
 
+from app.services.lenses import STORY_FOCUS
 from app.services.llm import AnswerServiceError, generate_text, source_block
 
 logger = logging.getLogger(__name__)
@@ -150,11 +151,14 @@ def parse_story(raw: str) -> tuple[str | None, list[tuple[str, str]]]:
     return title, scenes
 
 
-def _system_instruction(strictness: str, depth: str) -> str:
+def _system_instruction(strictness: str, depth: str, focus: str | None = None) -> str:
     low, high = DEPTH[depth]["scenes"]
-    return _SYSTEM_TEMPLATE.format(
+    instruction = _SYSTEM_TEMPLATE.format(
         strictness=STRICTNESS[strictness], low=low, high=high, words=DEPTH[depth]["words"]
     )
+    if focus in STORY_FOCUS:
+        instruction += f"\n\nAudience: {STORY_FOCUS[focus]}"
+    return instruction
 
 
 def _safe_name(filename: str) -> str:
@@ -172,11 +176,13 @@ def _user_message(filename: str, passages: list[Passage]) -> str:
     return f'The document is called "{_safe_name(filename)}".\n\n{blocks}\n\nTell its story.'
 
 
-def write_story(filename: str, passages: list[Passage], strictness: str, depth: str) -> Story:
+def write_story(
+    filename: str, passages: list[Passage], strictness: str, depth: str, focus: str | None = None
+) -> Story:
     """A story from the first provider that answers, else one told from the passages."""
     try:
         answer = generate_text(
-            _system_instruction(strictness, depth), _user_message(filename, passages), long_running=True
+            _system_instruction(strictness, depth, focus), _user_message(filename, passages), long_running=True
         )
     except AnswerServiceError as exc:
         logger.warning("No provider wrote the story; telling it from the document.", extra={"kind": exc.kind})

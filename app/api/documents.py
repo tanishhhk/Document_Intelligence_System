@@ -21,7 +21,7 @@ from app.models.upload_idempotency import UploadIdempotency
 from app.models.user import User
 from app.models.video_job import VideoJob
 from app.schemas.document import DocumentPage, DocumentResponse
-from app.services import ingestion, video_jobs
+from app.services import ingestion, usage, video_jobs
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -280,6 +280,15 @@ async def upload_document(
         if existing_document is not None:
             _remove_file(file_path)
             return existing_document
+
+        stored = db.query(Document).filter(Document.user_id == current_user.id).count()
+        if stored >= settings.max_documents_per_user:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Your library holds {settings.max_documents_per_user} documents. "
+                "Delete one to upload another.",
+            )
+        usage.consume(db, current_user.id, "upload")
 
         document = Document(
             id=document_id,

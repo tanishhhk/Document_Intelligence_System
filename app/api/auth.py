@@ -11,7 +11,9 @@ from app.config import settings
 from app.database import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User
-from app.schemas.user import Token, UserCreate, UserLogin, UserResponse
+from app.models.document import Document
+from app.schemas.user import ProfileUpdate, Token, UsageResponse, UserCreate, UserLogin, UserResponse
+from app.services import lenses, usage
 from app.services.auth import (
     create_access_token,
     decode_access_token,
@@ -73,6 +75,36 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
 def me(current_user: User = Depends(get_current_user)):
     """The signed-in user. Lets a client check that a stored token is still valid."""
     return current_user
+
+
+@router.put("/me/profile", response_model=UserResponse)
+def update_profile(
+    profile: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save the profession and focus chosen in onboarding."""
+    if not lenses.is_valid(profile.profession, profile.focus):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Choose a profession and one of its focus options.",
+        )
+    current_user.profession, current_user.focus = profile.profession, profile.focus
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.get("/me/usage", response_model=UsageResponse)
+def my_usage(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Today's uploads, questions and stories, against the daily limits."""
+    return {
+        "limits": usage.limits(),
+        "used": usage.used_today(db, current_user.id),
+        "resets_in_seconds": usage.seconds_until_reset(),
+        "max_documents": settings.max_documents_per_user,
+        "documents": db.query(Document).filter(Document.user_id == current_user.id).count(),
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

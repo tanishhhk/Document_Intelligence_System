@@ -26,6 +26,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.embeddings import generate_embeddings, generate_single_embedding  # noqa: E402
+from app.services.ranking import rank  # noqa: E402
+from app.services.reranker import rerank  # noqa: E402
 from app.utils.pdf_processor import extract_pages  # noqa: E402
 from app.utils.text_processor import chunk_pages, chunk_text  # noqa: E402
 from tests.eval.rag_dataset import DOCUMENTS, QUESTIONS, build_pdf  # noqa: E402
@@ -44,7 +46,14 @@ def _page_chunks(pages):
     return [(c.text, c.page_start, c.page_end) for c in chunk_pages(pages)]
 
 
-STRATEGIES = {"character": _character_chunks, "page_aware": _page_chunks}
+# Chunker, then ranking: "dense" embeddings only, "hybrid" adds BM25 keywords,
+# "reranked" adds the cross-encoder, as the app does.
+STRATEGIES = {
+    "character": (_character_chunks, "dense"),
+    "page_aware": (_page_chunks, "dense"),
+    "hybrid": (_page_chunks, "hybrid"),
+    "reranked": (_page_chunks, "reranked"),
+}
 
 
 def evaluate(strategy):
@@ -53,7 +62,8 @@ def evaluate(strategy):
     split_evidence = total_evidence = 0
     for name in DOCUMENTS:
         pages = extract_pages(build_pdf(name))
-        chunks = STRATEGIES[strategy](pages)
+        chunker, ranking = STRATEGIES[strategy]
+        chunks = chunker(pages)
         sizes.extend(len(text) for text, _s, _e in chunks)
         texts = [_norm(text) for text, _s, _e in chunks]
         matrix = np.asarray(generate_embeddings([text for text, _s, _e in chunks]))
@@ -65,7 +75,11 @@ def evaluate(strategy):
                 split_evidence += not any(item in text for text in texts)
 
             scores = matrix @ np.asarray(generate_single_embedding(question["question"]))
-            order = list(np.argsort(-scores))
+            if ranking == "dense":
+                order = list(np.argsort(-scores))
+            else:
+                raw = [text for text, _s, _e in chunks]
+                order = rank(question["question"], raw, scores, rerank if ranking == "reranked" else None)
             first = next(
                 (rank for rank, index in enumerate(order, start=1) if evidence[0] in texts[index]),
                 None,
@@ -103,9 +117,11 @@ def evaluate(strategy):
     return summary
 
 
-# Minimums for the page-aware chunker. Measured values when they were set:
-# hit@1 0.939, hit@3 0.970, MRR 0.985, page@1 0.970, no evidence split.
-THRESHOLDS = {"hit@1": 0.90, "hit@3": 0.95, "mrr": 0.95, "page@1": 0.90}
+# Minimums for the app's ranking (page-aware chunks, BM25 fusion, re-ranker),
+# on 60 questions over six documents. Measured when set: hit@1 0.950,
+# hit@3 1.000, MRR 0.983, page@1 0.967, no evidence split. Dense ranking
+# alone measured hit@1 0.933, hit@3 0.983, MRR 0.972.
+THRESHOLDS = {"hit@1": 0.92, "hit@3": 0.97, "mrr": 0.96, "page@1": 0.93}
 
 
 def check(summary) -> list[str]:
@@ -124,7 +140,7 @@ if __name__ == "__main__":
     for summary in results.values():
         print(json.dumps(summary, indent=2))
     if "--check" in sys.argv:
-        problems = check(results["page_aware"])
+        problems = check(results["reranked"])
         for problem in problems:
             print(f"REGRESSION: {problem}")
         sys.exit(1 if problems else 0)

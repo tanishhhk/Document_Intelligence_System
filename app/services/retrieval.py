@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.models.document_chunk import DocumentChunk
 from app.services.embeddings import EMBEDDING_DIMENSION, EMBEDDING_MODEL
+from app.services.ranking import rank
+from app.services.reranker import rerank
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +46,14 @@ def _dedupe_key(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
-def retrieve(db: Session, document_id: str, question_vector, top_k: int) -> RetrievalResult:
-    """Rank a document's chunks by cosine similarity to the question.
+def retrieve(
+    db: Session, document_id: str, question_vector, top_k: int, question: str | None = None
+) -> RetrievalResult:
+    """Rank a document's chunks for the question.
+
+    With the question text, embedding similarity is fused with BM25 keyword
+    scores and the top candidates are re-ranked (app.services.ranking);
+    without it, chunks are ranked by cosine similarity alone.
 
     The caller must already have checked that the document belongs to the
     current user. Chunks embedded by a different model, or with vectors that
@@ -85,7 +93,11 @@ def retrieve(db: Session, document_id: str, question_vector, top_k: int) -> Retr
     scores = np.vstack(vectors) @ query
 
     selected, seen = [], set()
-    for index in np.argsort(-scores, kind="stable"):
+    if question:
+        order = rank(question, [row.chunk_text for row in usable], scores, rerank)
+    else:
+        order = np.argsort(-scores, kind="stable")
+    for index in order:
         row = usable[index]
         key = _dedupe_key(row.chunk_text)
         if key in seen:
