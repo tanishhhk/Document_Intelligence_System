@@ -57,7 +57,8 @@ function Excerpt({ source, against }) {
   const cut = source.preview.length >= 360;
   let text = source.preview.trim();
   if (cut) text = `${text.slice(0, text.lastIndexOf(" ")).trimEnd()}…`;
-  const sentences = text.split(/(?<=[.!?])\s+/);
+  // Lines are split too, so a heading line never joins the sentence under it.
+  const sentences = text.split(/(?<=[.!?])\s+|\s*\n+\s*/).filter(Boolean);
   // Compare word stems (first five letters), so "expense" matches "expenses".
   const stems = (value) => (value.toLowerCase().match(WORD) || []).map((word) => word.slice(0, 5));
   const wanted = new Set(stems(against));
