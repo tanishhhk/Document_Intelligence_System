@@ -166,9 +166,25 @@ Files are compared by SHA-256. Keys expire after 24 hours.
 
 Request bodies are limited before they are read: uploads to `MAX_FILE_SIZE` plus 64 KiB of multipart framing, and other requests to 1 MiB.
 
-**`GET /documents/list`**
+**`GET /documents`**
 
-Lists documents owned by the authenticated user.
+Lists the authenticated user's documents one page at a time. Filtering, sorting and paging happen in the database.
+
+| Parameter | Values | Default |
+|---|---|---|
+| `q` | Text the filename contains, case-insensitive, 1 to 200 characters | none |
+| `status` | `queued`, `processing`, `completed` or `failed` | any |
+| `order` | `newest` or `oldest` upload first | `newest` |
+| `limit` | 1 to 100 | `20` |
+| `offset` | 0 or more | `0` |
+
+```json
+{"items": [{"id": "...", "filename": "report.pdf", "status": "completed", "...": "..."}], "total": 42, "limit": 20, "offset": 0}
+```
+
+**`GET /documents/list`** (deprecated)
+
+Returns every document the user owns in one unpaged list. Kept for existing clients; use `GET /documents` instead.
 
 **`GET /documents/{document_id}`**
 
