@@ -15,8 +15,11 @@ x-app: &app
     INGESTION_WORKER_ENABLED: "false"
     # Overrides UPLOAD_DIR from .env: the shared volume is the only writable location.
     UPLOAD_DIR: /data/uploads
+    # The worker renders videos and the API serves them, so they share this volume.
+    VIDEO_DIR: /data/videos
   volumes:
     - uploads:/data/uploads
+    - videos:/data/videos
 
 services:
   db:
@@ -66,3 +69,4 @@ services:
 volumes:
   pgdata:
   uploads:
+  videos:

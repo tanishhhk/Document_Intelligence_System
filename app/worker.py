@@ -1,4 +1,4 @@
-"""Run document processing in its own process.
+"""Run document and story processing in its own process.
 
     python -m app.worker
 
@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.logging_config import configure_logging
 from app.services.ingestion import IngestionWorker
+from app.services.video_jobs import VideoWorker
 
 
 def main() -> None:
@@ -23,12 +24,14 @@ def main() -> None:
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), lambda *_: stopped.set())
 
-    worker = IngestionWorker(SessionLocal, settings.upload_dir)
-    worker.start()
-    logging.getLogger(__name__).info("Ingestion worker started.")
+    workers = [IngestionWorker(SessionLocal, settings.upload_dir), VideoWorker(SessionLocal)]
+    for worker in workers:
+        worker.start()
+    logging.getLogger(__name__).info("Ingestion and video workers started.")
     while not stopped.wait(1.0):  # A timeout keeps Ctrl+C responsive on Windows.
         pass
-    worker.stop()
+    for worker in workers:
+        worker.stop()
 
 
 if __name__ == "__main__":

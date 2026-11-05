@@ -70,9 +70,24 @@ class Settings(BaseSettings):
     pdf_parse_timeout_seconds: float = Field(default=60.0, ge=1, le=600)
     pdf_parse_memory_mb: int = Field(default=1024, ge=128, le=16_384)
 
+    # Document stories. The text story is always produced; the narrated video
+    # is rendered when enabled, in a child process with these limits.
+    video_dir: str = Field(default="./generated_videos", min_length=1)
+    video_render_enabled: bool = True
+    video_render_timeout_seconds: float = Field(default=900.0, ge=30, le=3600)
+    video_render_memory_mb: int = Field(default=2048, ge=256, le=16_384)
+    # Older videos are deleted beyond this many per user; their stories stay.
+    videos_kept_per_user: int = Field(default=3, ge=1, le=100)
+    tts_voice: str = Field(default="en-US-AriaNeural", pattern=r"^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$")
+    # Stories are written in the background, so a slow free model may take longer.
+    story_timeout_seconds: float = Field(default=90.0, ge=5, le=600)
+    # How much document text one story is written from.
+    story_source_chars: int = Field(default=12_000, ge=1_000, le=200_000)
+
     auth_requests_per_minute: int = Field(default=30, ge=1, le=100_000)
     upload_requests_per_minute: int = Field(default=8, ge=1, le=100_000)
     chat_requests_per_minute: int = Field(default=20, ge=1, le=100_000)
+    video_requests_per_minute: int = Field(default=3, ge=1, le=100_000)
     default_requests_per_minute: int = Field(default=120, ge=1, le=100_000)
     max_rate_limit_keys: int = Field(default=10_000, ge=100, le=1_000_000)
 

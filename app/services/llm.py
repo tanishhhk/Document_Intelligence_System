@@ -29,7 +29,7 @@ Rules:
 _CITATION = re.compile(r"\[S(\d{1,3})\]")
 
 
-def _source_block(source) -> str:
+def source_block(source) -> str:
     if source.page_start is None:
         pages = ""
     elif source.page_start == source.page_end:
@@ -42,7 +42,7 @@ def _source_block(source) -> str:
 
 
 def build_user_message(question: str, sources) -> str:
-    blocks = "\n\n".join(_source_block(source) for source in sources)
+    blocks = "\n\n".join(source_block(source) for source in sources)
     return f"{blocks}\n\nQuestion: {question}"
 
 
@@ -94,7 +94,10 @@ _BASE_DELAY_SECONDS = 1.0
 _MAX_DELAY_SECONDS = 8.0
 
 _providers_cache = None
+_story_providers_cache = None
 _providers_lock = threading.Lock()
+# A story is a longer reply written in the background, so it may wait longer.
+_STORY_MAX_OUTPUT_TOKENS = 4096
 _slots = threading.BoundedSemaphore(settings.llm_max_concurrent_requests)
 
 
@@ -107,26 +110,45 @@ def configured_providers() -> list:
     return _providers_cache
 
 
+def story_providers() -> list:
+    global _story_providers_cache
+    if _story_providers_cache is None:
+        with _providers_lock:
+            if _story_providers_cache is None:
+                _story_providers_cache = build_providers(
+                    settings,
+                    timeout_seconds=settings.story_timeout_seconds,
+                    max_output_tokens=max(settings.llm_max_output_tokens, _STORY_MAX_OUTPUT_TOKENS),
+                )
+    return _story_providers_cache
+
+
 def generate_answer(question: str, sources) -> Answer:
-    """Answer from the retrieved passages using the first provider that succeeds.
+    """Answer from the retrieved passages using the first provider that succeeds."""
+    return generate_text(SYSTEM_INSTRUCTION, build_user_message(question, sources))
+
+
+def generate_text(system_instruction: str, user_message: str, long_running: bool = False) -> Answer:
+    """Generate with the first provider that succeeds.
 
     Each provider gets up to two attempts for transient failures, with
     jittered exponential backoff that honours the provider's retry delay.
     Then the next provider is tried. Raises AnswerServiceError when none
-    produces an answer, with the most actionable failure kind.
+    produces an answer, with the most actionable failure kind. long_running
+    uses STORY_TIMEOUT_SECONDS and a larger output limit.
     """
-    providers = configured_providers()
+    providers = story_providers() if long_running else configured_providers()
+    timeout = settings.story_timeout_seconds if long_running else settings.llm_timeout_seconds
     if not providers:
         raise AnswerServiceError("misconfigured")
     if not _slots.acquire(timeout=5):
         raise AnswerServiceError("busy", retry_after=5)
     try:
-        user_message = build_user_message(question, sources)
-        deadline = time.monotonic() + settings.llm_timeout_seconds * 3
+        deadline = time.monotonic() + timeout * 3
         failures = []
         for provider in providers:
             try:
-                text = _generate_with_retries(provider, user_message, deadline)
+                text = _generate_with_retries(provider, system_instruction, user_message, deadline)
                 return Answer(text, provider.name, provider.model)
             except ProviderFailure as failure:
                 failures.append(failure)
@@ -141,11 +163,11 @@ def generate_answer(question: str, sources) -> Answer:
         _slots.release()
 
 
-def _generate_with_retries(provider, user_message: str, deadline: float) -> str:
+def _generate_with_retries(provider, system_instruction: str, user_message: str, deadline: float) -> str:
     for attempt in range(1, _ATTEMPTS_PER_PROVIDER + 1):
         started = time.monotonic()
         try:
-            text = provider.generate(SYSTEM_INSTRUCTION, user_message)
+            text = provider.generate(system_instruction, user_message)
         except ProviderFailure as failure:
             # Log the failure category only: provider messages can echo
             # request details, and prompts contain private document text.

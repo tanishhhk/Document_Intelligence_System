@@ -8,6 +8,7 @@ A FastAPI service for uploading PDF documents, searching their text, and answeri
 - Text chunking and local embeddings using `all-MiniLM-L6-v2`.
 - Similarity-based retrieval of relevant chunks.
 - Answers generated with the configured Google Gemini model.
+- Narrated stories of a document: a witty text story every time, told in the document's own words when no model is available, plus an MP4 video with a narrated voice when rendering works.
 - JWT authentication and per-user document access.
 - Upload idempotency keys, logout token revocation, and API request limits.
 
@@ -249,6 +250,14 @@ Queues a failed document for processing again. Returns `409` if the document is 
 **`DELETE /documents/{document_id}`**
 
 Deletes the user's document, chunks, and stored PDF.
+
+### Stories
+
+**`POST /videos/generate/{document_id}`** with an optional body `{"strictness": "strict" | "exam", "depth": "overview" | "detailed"}` returns `202` and a story ID. One story runs at a time per user.
+
+**`GET /videos/{id}`** reports `status`, `stage` and `progress`. Once written, it holds `title`, `scenes` (each with `heading` and `text`), `narration` and `story_source` (`ai`, or `extractive` when no provider answered). The story appears before the video is finished. `video_status` is `rendering`, `ready`, `unavailable` (with `video_error`), `disabled` or `expired`.
+
+**`GET /videos/{id}/download`** returns the MP4 once `video_status` is `ready`. **`GET /videos`** lists your stories.
 
 ### Questions
 

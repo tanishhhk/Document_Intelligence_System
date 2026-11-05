@@ -134,6 +134,13 @@ def test_malformed_and_empty_responses_are_failures(response, kind):
     assert raised.value.kind == kind
 
 
+def test_an_empty_reply_cut_off_by_the_output_limit_is_retryable():
+    response = httpx.Response(200, json=_completion(content=None, finish="length"))
+    with pytest.raises(ProviderFailure) as raised:
+        _provider(lambda request: response).generate("RULES", "q")
+    assert (raised.value.kind, raised.value.retryable) == ("empty", True)
+
+
 def test_content_given_as_parts_is_joined():
     parts = [{"type": "text", "text": "The fee "}, {"type": "image_url"}, {"type": "text", "text": "is 30 [S1]."}]
     response = httpx.Response(200, json=_completion(content=parts))
