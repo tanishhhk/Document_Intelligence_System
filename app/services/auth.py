@@ -18,6 +18,22 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
+_dummy_hash: Optional[str] = None
+
+
+def verify_password_for_missing_user(plain_password: str) -> bool:
+    """Spend the same bcrypt work as a real check, so unknown emails are not faster.
+
+    Without this, a login for an unregistered email returns before any
+    hashing, and response times reveal which emails have accounts.
+    """
+    global _dummy_hash
+    if _dummy_hash is None:
+        _dummy_hash = get_password_hash(uuid.uuid4().hex)
+    verify_password(plain_password, _dummy_hash)
+    return False
+
+
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(
         password.encode("utf-8"),

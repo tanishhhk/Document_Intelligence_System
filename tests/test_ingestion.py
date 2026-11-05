@@ -134,9 +134,18 @@ def test_unexpected_errors_are_retried_then_marked_failed(db_session_factory, au
         raise RuntimeError("model weights could not be loaded")
 
     extractor["behavior"] = broken
-    ingestion.process_pending(db_session_factory)
+    delays = []
+    for attempt in range(1, ingestion.MAX_ATTEMPTS + 1):
+        assert ingestion.process_pending(db_session_factory) == 1
+        document = _document(db_session_factory, created["id"])
+        if attempt < ingestion.MAX_ATTEMPTS:
+            # Requeued with a growing delay, and not picked up before it passes.
+            assert document.status == "queued"
+            delays.append(document.lease_expires_at - int(time.time()))
+            assert ingestion.process_pending(db_session_factory) == 0
+            _set(db_session_factory, created["id"], lease_expires_at=int(time.time()) - 1)
 
-    document = _document(db_session_factory, created["id"])
+    assert delays[0] > 0 and delays[1] > delays[0]
     assert extractor["calls"] == ingestion.MAX_ATTEMPTS
     assert document.status == "failed"
     assert document.attempts == ingestion.MAX_ATTEMPTS

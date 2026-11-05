@@ -17,6 +17,7 @@ from app.services.auth import (
     decode_access_token,
     get_password_hash,
     verify_password,
+    verify_password_for_missing_user,
 )
 
 router = APIRouter(tags=["Authentication"])
@@ -50,7 +51,11 @@ def login(user_data: UserLogin, db: Session = Depends(get_db)):
     email = str(user_data.email).strip().lower()
     user = db.query(User).filter(User.email == email).first()
 
-    if user is None or not verify_password(user_data.password, user.hashed_password):
+    if user is None:
+        valid = verify_password_for_missing_user(user_data.password)
+    else:
+        valid = verify_password(user_data.password, user.hashed_password)
+    if not valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

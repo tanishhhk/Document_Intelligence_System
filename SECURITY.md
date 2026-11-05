@@ -4,7 +4,7 @@ These notes describe the current API implementation. They are not a penetration 
 
 ## Controls in place
 
-- Passwords are hashed with bcrypt. Registration validates password length and rejects inputs above bcrypt's 72-byte limit.
+- Passwords are hashed with bcrypt. Registration validates password length and rejects inputs above bcrypt's 72-byte limit. A login for an unknown email still runs a bcrypt check, so response time does not reveal whether an account exists. Registration does say when an email is already registered; hiding that would need an email confirmation flow.
 - Signed access tokens expire and include a token ID. Logout records the token ID as revoked.
 - Document routes filter by the authenticated user's ID.
 - Uploads are limited by file size, PDF signature, page count, and extracted character count. Failed uploads are cleaned up.
