@@ -18,6 +18,7 @@ os.environ["AUTH_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["UPLOAD_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["CHAT_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["DEFAULT_REQUESTS_PER_MINUTE"] = "100000"
+os.environ["VIDEO_REQUESTS_PER_MINUTE"] = "100000"
 # Daily limits are tested in tests/test_launch_limits.py with their own values.
 os.environ["DAILY_UPLOADS_PER_USER"] = "100000"
 os.environ["DAILY_QUESTIONS_PER_USER"] = "100000"
