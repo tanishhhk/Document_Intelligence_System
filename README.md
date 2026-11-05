@@ -1,221 +1,169 @@
 # Document Intelligence System
 
-A FastAPI backend for question-answering over PDF documents using retrieval-augmented generation (RAG). Upload a PDF, ask questions about it in natural language, get answers grounded in the document with cited source chunks.
+A FastAPI service for uploading PDF documents, searching their text, and answering questions with retrieval-augmented generation (RAG).
 
----
+## Features
 
-## How it works
+- PDF text extraction with file, page, and character limits.
+- Text chunking and local embeddings using `all-MiniLM-L6-v2`.
+- Similarity-based retrieval of relevant chunks.
+- Answers generated with the configured Google Gemini model.
+- JWT authentication and per-user document access.
+- Upload idempotency keys, logout token revocation, and API request limits.
 
-```
-PDF upload
-   -> pypdf text extraction
-   -> character chunking (1000 chars, 200 overlap)
-   -> sentence-transformers embeddings (all-MiniLM-L6-v2, 384-dim)
-   -> chunks + embeddings persisted to SQL
+## Request flow
 
-Question
-   -> embed the question with the same model
-   -> cosine similarity against every chunk of the target document
-   -> top-k chunks joined into a context block
-   -> Gemini 2.5 Flash answers from that context only
-   -> answer returned with source chunk indices and similarity scores
-```
+1. A user uploads a PDF.
+2. The service extracts selectable text and splits it into chunks.
+3. The embedding model converts chunks to vectors, which are stored with the document.
+4. A question is embedded and compared with the document chunks.
+5. The most relevant chunks are sent to Gemini as context.
+6. The response includes source chunk references and similarity scores.
 
-Retrieval is exact (brute-force cosine over all chunks), not approximate. No vector database — embeddings are stored as JSON in a `TEXT` column and scored in Python.
-
----
+The current retrieval implementation compares stored vectors in Python. It does not use a dedicated vector database. Scanned PDFs need OCR, which is not included.
 
 ## Stack
 
-| Layer | Choice |
+| Area | Technology |
 |---|---|
-| API | FastAPI + Uvicorn |
-| ORM | SQLAlchemy 2.0 |
-| Database | SQLite (default) / PostgreSQL |
-| Embeddings | `sentence-transformers` — `all-MiniLM-L6-v2`, runs locally, no API cost |
-| LLM | Google Gemini 2.5 Flash |
-| Auth | JWT (python-jose) + bcrypt password hashing |
-| PDF | pypdf |
-
----
-
-## Project layout
-
-```
-app/
-├── main.py                     FastAPI app, CORS, router registration
-├── config.py                   Pydantic Settings, loaded from .env
-├── database.py                 Engine, SessionLocal, get_db dependency
-│
-├── api/                        HTTP layer — routing and validation only
-│   ├── auth.py                 register, login
-│   ├── documents.py            upload, list, get, delete
-│   └── chat.py                 ask (retrieval + generation)
-│
-├── services/                   Business logic, no FastAPI imports
-│   ├── auth.py                 hashing, JWT encode/decode
-│   ├── embeddings.py           model loaded once at import
-│   ├── llm.py                  Gemini call with 429 backoff
-│   └── video_generator.py      experimental, not wired up (see Known Issues)
-│
-├── models/                     SQLAlchemy tables
-│   ├── user.py
-│   ├── document.py
-│   └── document_chunk.py
-│
-├── schemas/                    Pydantic request/response contracts
-│   ├── user.py
-│   └── document.py
-│
-└── utils/
-    ├── pdf_processor.py        text extraction
-    └── text_processor.py       overlapping chunker
-```
-
----
+| API | FastAPI and Uvicorn |
+| Database | SQLAlchemy with SQLite or PostgreSQL |
+| Authentication | JWT, bcrypt |
+| PDF processing | pypdf |
+| Embeddings | sentence-transformers, all-MiniLM-L6-v2 |
+| Answer generation | Google GenAI SDK |
 
 ## Setup
 
-**Requirements:** Python 3.10+
+Python 3.11 is recommended.
 
 ```bash
 git clone https://github.com/tanishhhk/Document_Intelligence_System.git
 cd Document_Intelligence_System
 
 python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+# Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
-pip install sentence-transformers email-validator numpy
+pip install -r requirements-dev.txt
+cp .env.example .env
 ```
 
-> The three extra packages are imported by the code but missing from `requirements.txt`. Without them the app fails at import. See Known Issues.
+Edit `.env` before starting the service:
 
-Create a `.env` in the project root:
+- Set `SECRET_KEY` to a randomly generated value of at least 32 characters. You can generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
+- Set `GEMINI_API_KEY` to a key from Google AI Studio.
+- Set `CORS_ORIGINS` to a JSON array containing the exact origins of the frontend. The example includes common local development ports.
+- Set `DATABASE_URL` to your database connection string. SQLite is the default example.
 
-```env
-DATABASE_URL=sqlite:///./document_intelligence.db
-SECRET_KEY=<openssl rand -hex 32>
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-GEMINI_API_KEY=<key from https://aistudio.google.com/apikey>
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE=10485760
-```
+The default answer model is `gemini-3.8-flash`. Change it with `GEMINI_MODEL` if needed.
 
-Run:
+Run the API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Interactive docs at `http://localhost:8000/docs`.
+The interactive API documentation is available at `http://localhost:8000/docs`.
 
-First upload downloads the MiniLM weights (~90 MB) and will be slow.
+The first operation that needs embeddings downloads the MiniLM model weights.
 
----
+## Configuration
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `DATABASE_URL` | SQLAlchemy database URL | SQLite file |
+| `SECRET_KEY` | JWT signing key | Required |
+| `ALGORITHM` | JWT signing algorithm | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `30` |
+| `GEMINI_API_KEY` | Gemini API key | Required |
+| `GEMINI_MODEL` | Answer generation model | `gemini-3.8-flash` |
+| `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
+| `UPLOAD_DIR` | Where uploaded PDFs are stored | `./uploads` |
+| `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
+| `MAX_PDF_PAGES` | Maximum PDF pages processed | `500` |
+| `MAX_PDF_CHARS` | Maximum extracted characters | `500000` |
+| `AUTH_REQUESTS_PER_MINUTE` | Request limit for login and registration | `30` |
+| `UPLOAD_REQUESTS_PER_MINUTE` | Request limit for upload | `8` |
+| `CHAT_REQUESTS_PER_MINUTE` | Request limit for questions | `20` |
+| `DEFAULT_REQUESTS_PER_MINUTE` | Limit for other API routes | `120` |
+| `MAX_RATE_LIMIT_KEYS` | Maximum tracked peer and route buckets | `10000` |
 
 ## API
 
-Paths below are the routes as currently registered. `auth` and `documents` have a duplicated prefix — see Known Issues #1.
+Registration and login accept JSON. Protected routes require an `Authorization: Bearer <access_token>` header.
 
-### Auth
+### Authentication
 
-**`POST /auth/auth/register`**
-```json
-{ "email": "you@example.com", "password": "hunter2" }
-```
-→ `201` with `{ id, email, created_at }`
+**`POST /auth/register`**
 
-**`POST /auth/auth/login`**
-```json
-{ "email": "you@example.com", "password": "hunter2" }
-```
-→ `200` with `{ access_token, token_type }`
-
-### Documents
-
-**`POST /documents/documents/upload`** — `multipart/form-data`, field `file`, PDF only.
-Extracts, chunks, embeds, and persists synchronously. Returns the document record.
-
-**`GET /documents/documents/list`** — all documents.
-
-**`GET /documents/documents/{document_id}`** — one document.
-
-**`DELETE /documents/documents/documents/{document_id}`** — removes the file from disk, its chunks, and the record.
-
-### Chat
-
-**`POST /chat/ask`**
-```json
-{ "question": "What is the refund policy?",
-  "document_id": "5f2c...",
-  "top_k": 3 }
-```
-
-Response:
 ```json
 {
-  "answer": "...",
-  "document_name": "policy.pdf",
-  "sources": [
-    { "chunk_index": 12, "similarity_score": 0.81, "preview": "..." }
-  ],
-  "metadata": { "chunks_searched": 47, "top_k_used": 3, "model": "gemini-2.5-flash" }
+  "email": "you@example.com",
+  "password": "A-strong-password-123"
 }
 ```
 
-### Misc
+Registration requires at least 12 characters. Passwords longer than bcrypt's 72-byte limit are rejected.
 
-`GET /` — service info. `GET /health` — liveness.
+**`POST /auth/login`**
 
----
+Send the same email and password fields. A successful response contains `access_token` and `token_type`.
 
-## Known issues
+**`POST /auth/logout`**
 
-Documented rather than hidden. Ordered by how much they block you.
+Requires the bearer token. The current access token is added to the revocation table.
 
-1. **Duplicated router prefixes.** `api/auth.py` and `api/documents.py` set `prefix=` on their `APIRouter`, and `main.py` sets it again on `include_router`. FastAPI concatenates, producing `/auth/auth/register` and `/documents/documents/upload`. The delete route is triple-prefixed. Fix by removing `prefix=` from the two `APIRouter(...)` constructors.
+### Documents
 
-2. **Missing dependencies.** `sentence-transformers`, `email-validator`, and `numpy` are imported but unpinned. `langchain`, `langchain-openai`, `openai`, `aiofiles`, `python-docx`, and `passlib` are pinned but unused. `google-generativeai` has no version constraint.
+**`POST /documents/upload`**
 
-3. **Authentication is not enforced.** JWTs are issued but never verified — `decode_access_token` has no callers, and there is no `get_current_user` dependency. `documents.py` hardcodes `user_id="temp-user-id"`, and `/list` and `/ask` are unauthenticated and unscoped. Do not deploy this publicly as-is.
+Multipart form upload with a `file` field and an `Idempotency-Key` header. The key must contain 16 to 128 letters, numbers, dots, underscores, or hyphens. Use a new key for each new upload operation. Reusing a completed key for the same user returns the existing document instead of repeating ingestion work.
 
-4. **`services/video_generator.py` does not run.** Missing imports (`time`, `DocumentChunk`), depends on the removed `moviepy.editor` module and the pre-1.x ElevenLabs SDK, and neither package is in requirements. Experimental, imported nowhere.
+**`GET /documents/list`**
 
-5. **Postgres is not actually supported.** `database.py` hardcodes `connect_args={"check_same_thread": False}`, which is SQLite-only, despite `psycopg` being installed. Gate it on the URL scheme.
+Lists documents owned by the authenticated user.
 
-6. **Upload blocks the event loop.** The endpoint is `async def` but calls synchronous, CPU-bound extraction and embedding. A large PDF stalls every concurrent request. Belongs in `BackgroundTasks` — the `status` column already defaults to `"processing"` in anticipation of that.
+**`GET /documents/{document_id}`**
 
-7. **Scanned PDFs fail silently.** Image-only pages yield empty text, the document is still marked `completed`, zero chunks are stored, and `/chat/ask` later 404s. No OCR fallback.
+Returns one document if it belongs to the authenticated user.
 
-8. **`MAX_FILE_SIZE` is never checked.** The whole upload is read into memory unbounded.
+**`DELETE /documents/{document_id}`**
 
-9. **CORS is fully open.** `allow_origins=["*"]` with `allow_credentials=True`.
+Deletes the user's document, chunks, and stored PDF.
 
-10. **No migrations.** `Base.metadata.create_all()` runs at import; schema changes require dropping the database. No Alembic.
+### Questions
 
-11. **`top_k` is unbounded** — a large value stuffs the entire document into the prompt.
+**`POST /chat/ask`**
 
----
+```json
+{
+  "question": "What does the report say about revenue?",
+  "document_id": "document-id-from-upload",
+  "top_k": 3
+}
+```
 
-## Roadmap
+The question is limited to 4,000 characters and `top_k` must be between 1 and 10. The response includes the answer, selected source chunks, similarity scores, and model metadata.
 
-- [ ] Fix router prefixes and pin the real dependency set
-- [ ] `get_current_user` dependency; scope documents and questions to the owner
-- [ ] Move ingestion to `BackgroundTasks`, drive the `status` column properly
-- [ ] pgvector + HNSW index to replace in-Python cosine scan
-- [ ] Alembic migrations
-- [ ] Semantic chunking (`RecursiveCharacterTextSplitter`) instead of fixed character windows
-- [ ] Multi-turn chat with conversation history
-- [ ] Cross-document retrieval
-- [ ] DOCX and TXT ingestion (`python-docx` is already a dependency)
-- [ ] OCR fallback for scanned PDFs
-- [ ] Tests, Dockerfile, `.env.example`
-- [ ] Frontend
+## Tests
 
----
+Run the test suite from the repository root:
 
-## License
+```bash
+pytest -q
+```
 
-Not currently licensed. Add one before reuse.
+The tests use a local SQLite database and mock the embedding and answer-generation calls where appropriate. They do not verify live Gemini credentials, billing, quotas, or network availability.
+
+## Limitations
+
+- The rate limiter stores state in each process. Use a shared store or trusted gateway for multi-worker deployments.
+- Rate limiting and upload caps do not replace network-level DDoS protection.
+- Scanned PDFs need an OCR implementation.
+- Database tables are initialized with `create_all`; migration management is not included.
+- Retrieval scans stored vectors in Python, which may become slow as the number of chunks grows.
+- This repository is a prototype and has not undergone a formal security audit.
+
+See [SECURITY.md](SECURITY.md) for details about covered attack surfaces and remaining limits.

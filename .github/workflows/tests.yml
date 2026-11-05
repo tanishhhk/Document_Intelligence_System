@@ -8,6 +8,7 @@ on:
       - feature/rag-resource-hardening
       - feature/runtime-config-security
       - feature/gemini-sdk-migration
+      - docs/api-and-security-overview
   pull_request:
     branches:
       - main
