@@ -1,18 +1,27 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, chat, documents
 from app.config import settings
-from app.database import Base, engine
+from app.database import run_migrations
 from app.middleware.rate_limit import RateLimitMiddleware
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if settings.auto_migrate:
+        run_migrations()
+    yield
+
 
 app = FastAPI(
     title="Document Intelligence System",
     description="AI-powered document analysis with RAG.",
     version="1.2.0",
+    lifespan=lifespan,
 )
-
-Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,

@@ -67,6 +67,16 @@ Run the API:
 uvicorn app.main:app --reload
 ```
 
+The schema is managed with Alembic. By default the API upgrades the database to the latest revision when it starts. Databases created by earlier versions of the project, before migrations existed, are upgraded in place and keep their rows.
+
+When more than one process shares a database, set `AUTO_MIGRATE=false` and run the upgrade once before starting the processes:
+
+```bash
+alembic upgrade head
+```
+
+Create a new revision after changing a model with `alembic revision --autogenerate -m "describe the change"`, then review the generated file. `tests/test_migrations.py` fails if the models and the migrations disagree.
+
 The interactive API documentation is available at `http://localhost:8000/docs`.
 
 The first operation that needs embeddings downloads the MiniLM model weights.
@@ -82,6 +92,7 @@ The first operation that needs embeddings downloads the MiniLM model weights.
 | `GEMINI_API_KEY` | Gemini API key | Required |
 | `GEMINI_MODEL` | Answer generation model | `gemini-3.8-flash` |
 | `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
+| `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored | `./uploads` |
 | `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
 | `MAX_PDF_PAGES` | Maximum PDF pages processed | `500` |
@@ -157,14 +168,15 @@ Run the test suite from the repository root:
 pytest -q
 ```
 
-The tests use a local SQLite database and mock the embedding and answer-generation calls where appropriate. They do not verify live Gemini credentials, billing, quotas, or network availability.
+Set `TEST_DATABASE_URL` to run the API tests against a disposable PostgreSQL database, and `TEST_POSTGRES_URL` to include PostgreSQL in the migration tests. CI runs both.
+
+The tests use a local SQLite database by default and mock the embedding and answer-generation calls where appropriate. They do not verify live Gemini credentials, billing, quotas, or network availability.
 
 ## Limitations
 
 - The rate limiter stores state in each process. Use a shared store or trusted gateway for multi-worker deployments.
 - Rate limiting and upload caps do not replace network-level DDoS protection.
 - Scanned PDFs need an OCR implementation.
-- Database tables are initialized with `create_all`; migration management is not included.
 - Retrieval scans stored vectors in Python, which may become slow as the number of chunks grows.
 - This repository is a prototype and has not undergone a formal security audit.
 

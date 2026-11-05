@@ -30,6 +30,8 @@ class Settings(BaseSettings):
         ]
     )
 
+    auto_migrate: bool = True
+
     upload_dir: str = Field(default="./uploads", min_length=1)
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)
     max_pdf_pages: int = Field(default=500, ge=1, le=10_000)

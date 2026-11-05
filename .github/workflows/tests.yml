@@ -11,6 +11,20 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dis
+          POSTGRES_PASSWORD: dis-ci-only
+          POSTGRES_DB: dis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,8 +40,14 @@ jobs:
           # CPU-only torch keeps the install small; the app does not use a GPU.
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt -r requirements-dev.txt
-      - name: Run tests
-        run: pytest -q
+      - name: Run tests on SQLite, and migrations on PostgreSQL
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://dis:dis-ci-only@localhost:5432/dis_test
+        run: pytest -q -W error
+      - name: Run API tests on PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://dis:dis-ci-only@localhost:5432/dis_test
+        run: pytest -q -W error tests/test_auth.py tests/test_document_security.py
 
   dependency-audit:
     runs-on: ubuntu-latest

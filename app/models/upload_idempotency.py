@@ -13,7 +13,7 @@ class UploadIdempotency(Base):
     )
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     idempotency_key = Column(String, nullable=False)
     document_id = Column(String, nullable=True)
     status = Column(String, nullable=False, default="processing")

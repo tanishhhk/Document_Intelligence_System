@@ -6,3 +6,4 @@ os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-for-hs512-s
 os.environ["GEMINI_API_KEY"] = "test-only-placeholder-key"
 os.environ["UPLOAD_DIR"] = "./uploads"
 os.environ["MAX_FILE_SIZE"] = "10485760"
+os.environ["AUTO_MIGRATE"] = "false"
