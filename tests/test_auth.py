@@ -206,3 +206,20 @@ def test_protected_routes_require_an_authorization_header():
         assert client.post(
             "/auth/logout", headers={"Authorization": "Basic dXNlcjpwYXNz"}
         ).status_code == 401
+
+
+def test_me_returns_the_signed_in_user_until_logout():
+    with TestClient(app) as client:
+        created = client.post("/auth/register", json={"email": "me@example.com", "password": "StrongPassword123!"})
+        login = client.post("/auth/login", json={"email": "me@example.com", "password": "StrongPassword123!"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        me = client.get("/auth/me", headers=headers)
+        assert me.status_code == 200
+        assert me.json() == created.json()
+        assert "hashed_password" not in me.text
+
+        assert client.get("/auth/me").status_code == 401
+        assert client.get("/auth/me", headers={"Authorization": "Bearer not-a-token"}).status_code == 401
+        assert client.post("/auth/logout", headers=headers).status_code == 204
+        assert client.get("/auth/me", headers=headers).status_code == 401
