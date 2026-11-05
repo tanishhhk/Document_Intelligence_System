@@ -38,7 +38,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # CPU-only torch keeps the install small; the app does not use a GPU.
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Run tests on SQLite, and migrations on PostgreSQL
         env:
@@ -60,3 +60,57 @@ jobs:
         run: |
           python -m pip install --upgrade pip pip-audit
           pip-audit -r requirements.txt -r requirements-dev.txt --progress-spinner off
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Ruff
+        run: |
+          python -m pip install --upgrade pip ruff==0.17.3
+          ruff check .
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Write a CI-only environment file
+        run: |
+          python - <<'PY'
+          import re, secrets
+          values = {
+              "SECRET_KEY": secrets.token_hex(32),
+              "POSTGRES_PASSWORD": secrets.token_hex(16),
+              "GEMINI_API_KEY": "ci-placeholder-not-a-real-key",
+          }
+          text = open(".env.example").read()
+          for key, value in values.items():
+              text = re.sub(rf"^{key}=.*$", f"{key}={value}", text, flags=re.M)
+          open(".env", "w").write(text)
+          PY
+      - name: Start the stack
+        # Name both long-running services; naming only api would not start the worker.
+        run: docker compose up --build --detach --wait --wait-timeout 600 api worker
+      - name: Smoke test the running stack
+        run: |
+          python -m pip install httpx==0.28.1 pypdf==6.21.4
+          BASE_URL=http://localhost:8000 python scripts/smoke_test.py
+      - name: Check the containers run as a non-root user
+        run: test "$(docker compose exec -T api id -u)" != "0"
+      - name: Show logs
+        if: always()
+        run: |
+          for service in migrate worker api; do
+            echo "::group::$service"
+            docker compose logs --no-color "$service" | tail -n 80
+            echo "::endgroup::"
+          done
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

@@ -122,7 +122,7 @@ def _split_long(segment: _Segment, size: int) -> list[_Segment]:
 
 def _join(segments: list[_Segment]) -> str:
     parts = []
-    for previous, segment in zip([None, *segments], segments):
+    for previous, segment in zip([None, *segments], segments, strict=False):
         if previous is not None:
             block = segment.kind != "sentence" or previous.kind != "sentence"
             parts.append("\n" if block else " ")

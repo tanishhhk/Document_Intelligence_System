@@ -93,6 +93,26 @@ python -m app.worker
 
 The worker also deletes stored PDFs that have no matching document and are more than an hour old, such as files left behind by a crash.
 
+### Docker
+
+`docker-compose.yml` runs PostgreSQL, a one-off migration, the API and a separate document worker:
+
+```bash
+cp .env.example .env   # set SECRET_KEY, GEMINI_API_KEY and POSTGRES_PASSWORD
+docker compose up --build
+```
+
+The image runs as a non-root user and includes the embedding model, so containers do not download it at start-up. Uploaded files live in the `uploads` volume shared by the API and the worker; the database lives in `pgdata`. Secrets are read from `.env` at run time and are not copied into the image. Behind a reverse proxy, set `FORWARDED_ALLOW_IPS` to the proxy's address so client addresses reach the rate limiter. CI builds the image, starts this stack and runs `scripts/smoke_test.py` against it.
+
+Running in containers does not by itself make the service production ready; see the limitations below.
+
+### Health and logs
+
+- `GET /health` reports that the process is running.
+- `GET /ready` returns `200` only when the database is reachable, the schema is at the latest migration, and the in-process worker is running when enabled. Otherwise it returns `503` with the failing check.
+
+Logs are JSON lines on standard output (`LOG_FORMAT=text` for plain text). Each request is logged with its method, path, status and duration under a request ID, which is also returned in the `X-Request-ID` response header. A client may send its own `X-Request-ID` of up to 64 letters, digits, dots, underscores or hyphens. Processing logs carry the `document_id`, with embedding and total durations; Gemini calls log their duration and failure kind; rate-limit rejections are logged with their bucket. Logs never contain passwords, tokens, `Authorization` headers, query strings, prompts or document text, and database errors hide SQL parameters.
+
 ## Configuration
 
 | Variable | Purpose | Default |
@@ -109,6 +129,8 @@ The worker also deletes stored PDFs that have no matching document and are more 
 | `GEMINI_MAX_CONCURRENT_REQUESTS` | Gemini calls allowed at once per process | `8` |
 | `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
 | `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR` | `INFO` |
+| `LOG_FORMAT` | `json` or `text` | `json` |
 | `INGESTION_WORKER_ENABLED` | Run the document processing worker inside the API process | `true` |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored | `./uploads` |
 | `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
@@ -261,11 +283,14 @@ Timeouts, rate limits and server errors from Gemini are retried up to three time
 
 ## Tests
 
-Run the test suite from the repository root:
+Run the test suite and the linter from the repository root:
 
 ```bash
 pytest -q
+ruff check .
 ```
+
+CI also audits the pinned dependencies with `pip-audit`, scans the history for secrets with Gitleaks, and runs the Docker smoke test.
 
 ### Evaluation
 

@@ -68,7 +68,12 @@ def extract_and_embed_pdf(pdf_bytes: bytes):
     if not chunks:
         raise DocumentRejected("The PDF did not produce any text chunks.")
 
+    started = time.monotonic()
     embeddings = generate_embeddings([chunk.text for chunk in chunks])
+    logger.info(
+        "Embedded chunks.",
+        extra={"chunk_count": len(chunks), "duration_ms": round((time.monotonic() - started) * 1000)},
+    )
     return chunks, embeddings, len(pages)
 
 
@@ -195,7 +200,7 @@ def process_document(session_factory, document_id: str, token: str) -> None:
             db.query(DocumentChunk).filter(DocumentChunk.document_id == document_id).delete(
                 synchronize_session=False
             )
-            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            for index, (chunk, embedding) in enumerate(zip(chunks, embeddings, strict=True)):
                 row = DocumentChunk(
                     id=str(uuid.uuid4()),
                     document_id=document_id,
@@ -299,6 +304,9 @@ class IngestionWorker:
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="ingestion-worker", daemon=True)
         self._thread.start()
+
+    def is_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
 
     def wake(self) -> None:
         self._wake.set()

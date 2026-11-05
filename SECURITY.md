@@ -14,6 +14,10 @@ These notes describe the current API implementation. They are not a penetration 
 - Runtime secret configuration is read from environment variables. Local environment files are ignored by Git, except for the example template.
 - Current request handlers use SQLAlchemy ORM queries rather than constructing SQL from user-provided strings.
 
+- Uploaded documents are treated as untrusted input to the language model. Instructions go in a separate system instruction; document passages are sent as delimited source data that cannot close its own delimiter. The model has no tools or actions. Citations to passages that were not retrieved are removed.
+- Logs record request metadata and error categories only. They never contain passwords, tokens, `Authorization` headers, query strings, prompts or document text, and database errors hide SQL parameters.
+- Containers run as a non-root user, and secrets are supplied at run time rather than built into the image.
+
 ## Attack surfaces
 
 ### SQL injection and NoSQL injection
@@ -43,6 +47,10 @@ Request bodies are size-checked before they are read, so an oversized upload is 
 Requests are rate limited per route group. Requests with a validly signed token count per user and also toward their address at ten times the per-user limit, so users sharing an address do not block each other and rotating accounts from one address stays bounded. Login, registration and unauthenticated requests count per peer address. When the tracking map is full, the least recently used entry is evicted; earlier versions rejected every new caller, which let anyone with enough source addresses lock out all other users.
 
 The limiter is in-process. It is not a distributed rate limiter or network-level DDoS defense. Put a trusted gateway or shared rate limit store in front of multi-worker or public deployments. The limiter ignores `X-Forwarded-For`; behind a proxy, configure Uvicorn's `--forwarded-allow-ips` instead.
+
+### Prompt injection
+
+A document can contain text written to manipulate the model, such as "ignore previous instructions". The controls above reduce the risk, and `scripts/evaluate_answers.py` checks two injection cases against the live model, but no prompt design fully prevents a model from being influenced by its input. Because the model cannot take actions and only sees the requesting user's own document, a successful injection can at worst distort that user's answer.
 
 ### Clipboard attacks
 

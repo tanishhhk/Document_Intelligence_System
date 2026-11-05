@@ -1,0 +1,68 @@
+# Local stack: PostgreSQL, a one-off migration, the API and a document worker.
+#
+#   cp .env.example .env    # then set SECRET_KEY, GEMINI_API_KEY and POSTGRES_PASSWORD
+#   docker compose up --build
+#
+# Secrets come from .env at run time; they are not copied into the image.
+
+x-app: &app
+  build: .
+  image: document-intelligence:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://dis:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/dis
+    AUTO_MIGRATE: "false"
+    INGESTION_WORKER_ENABLED: "false"
+    # Overrides UPLOAD_DIR from .env: the shared volume is the only writable location.
+    UPLOAD_DIR: /data/uploads
+  volumes:
+    - uploads:/data/uploads
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: dis
+      POSTGRES_USER: dis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dis -d dis"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    # Lets a document that is being processed finish before the container stops.
+    stop_grace_period: 60s
+
+volumes:
+  pgdata:
+  uploads:

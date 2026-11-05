@@ -32,6 +32,8 @@ def enable_sqlite_foreign_keys(engine) -> None:
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
+    # Keep SQL parameters, such as chunk text, out of error messages and logs.
+    hide_parameters=True,
     **_engine_options(settings.database_url),
 )
 if _is_sqlite(settings.database_url):
@@ -46,6 +48,16 @@ Base = declarative_base(
         }
     )
 )
+
+
+def schema_is_current(connection) -> bool:
+    """Whether the database is at the latest Alembic revision."""
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    head = ScriptDirectory.from_config(Config(str(_ALEMBIC_INI))).get_current_head()
+    return MigrationContext.configure(connection).get_current_revision() == head
 
 
 def run_migrations(database_url: str | None = None) -> None:

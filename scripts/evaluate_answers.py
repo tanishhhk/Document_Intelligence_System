@@ -71,7 +71,7 @@ def _index_documents(session_factory) -> dict[str, str]:
                     page_count=page_count,
                 )
             )
-            for index, (chunk, embedding) in enumerate(zip(chunks, vectors)):
+            for index, (chunk, embedding) in enumerate(zip(chunks, vectors, strict=True)):
                 row = DocumentChunk(
                     id=str(uuid.uuid4()),
                     document_id=document_id,
