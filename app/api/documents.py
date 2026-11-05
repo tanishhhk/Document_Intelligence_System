@@ -193,7 +193,7 @@ async def upload_document(
         if content_length and content_length.isdigit():
             if int(content_length) > settings.max_file_size:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail="PDF exceeds the configured upload limit.",
                 )
 
@@ -206,7 +206,7 @@ async def upload_document(
                 file_size += len(block)
                 if file_size > settings.max_file_size:
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail="PDF exceeds the configured upload limit.",
                     )
                 if len(first_bytes) < 1024:
@@ -228,7 +228,7 @@ async def upload_document(
             chunks, embeddings = await run_in_threadpool(_extract_and_embed_pdf, file_path)
         except ValueError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=str(exc),
             ) from exc
 
