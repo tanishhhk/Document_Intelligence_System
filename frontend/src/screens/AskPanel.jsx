@@ -56,7 +56,10 @@ const HEADING = /^(section|chapter|part|article|clause)\s+[\d.]+\.?$/i;
 function Excerpt({ source, against }) {
   const cut = source.preview.length >= 360;
   let text = source.preview.trim();
-  if (cut) text = `${text.slice(0, text.lastIndexOf(" ")).trimEnd()}…`;
+  if (cut) {
+    text = text.slice(0, text.lastIndexOf(" ")).trimEnd();
+    if (!/[.!?]$/.test(text)) text += "…"; // No ellipsis after a full stop.
+  }
   // Lines are split too, so a heading line never joins the sentence under it.
   const sentences = text.split(/(?<=[.!?])\s+|\s*\n+\s*/).filter(Boolean);
   // Compare word stems (first five letters), so "expense" matches "expenses".
