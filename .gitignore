@@ -1,7 +1,8 @@
 .env
+.env.*
+!.env.example
 uploads/
 __pycache__/
 .venv/
-venv
+venv/
 document_intelligence.db
-
