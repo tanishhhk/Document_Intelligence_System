@@ -50,3 +50,6 @@ def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
     root.setLevel(level)
     # RequestContextMiddleware logs every request with its ID and duration.
     logging.getLogger("uvicorn.access").disabled = True
+    # The readiness check opens a migration context on every call; skip its
+    # informational lines.
+    logging.getLogger("alembic.runtime.migration").setLevel(logging.WARNING)
