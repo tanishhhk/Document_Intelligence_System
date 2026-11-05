@@ -157,7 +157,7 @@ def test_without_an_ai_the_story_is_told_in_the_documents_own_words(world):
     _run(world)
     story = _detail(world, job_id).json()
     assert (story["status"], story["story_source"]) == ("completed", "extractive")
-    assert story["title"] == "The Tale of photosynthesis"
+    assert story["title"] == "The Tale of Photosynthesis"
     assert story["scenes"][0]["heading"] == "Our story begins"
     assert "coffee break" in story["scenes"][0]["text"]
     assert story["scenes"][-1]["heading"] == "The moral of the story"
@@ -204,7 +204,7 @@ def test_stories_get_a_longer_time_limit_and_output_budget(monkeypatch):
     provider = llm.story_providers()[0]
     assert provider.name == "openrouter"
     assert provider._client.timeout.read == 75.0
-    assert provider.max_output_tokens >= 2048
+    assert provider.max_output_tokens >= 4096
     monkeypatch.setattr(llm, "_story_providers_cache", None)
 
 
@@ -353,6 +353,17 @@ def test_story_replies_in_loose_formats_are_understood():
     assert scenes == [("Start", "Once upon. More.")]
     title, scenes = story_service.parse_story("Just one plain paragraph about cats and their naps.")
     assert title is None and scenes[0][1].startswith("Just one plain")
+
+
+def test_the_fallback_skips_table_rows_and_tidies_the_name():
+    table = "Revenue by region: Region | Q3 2026 | Q3 2025 North America | 198 | 190 Europe | 121 | 117."
+    prose = "Asia Pacific was the fastest growing region, with revenue up 31 percent year on year."
+    passages = story_service.sample_passages([(f"{table} {prose}", 1, 1)], 5000)
+    story = story_service.extractive_story("quarterly_report-final.pdf", passages)
+    text = " ".join(t for _h, t in story.scenes)
+    assert prose in text and "|" not in text
+    assert story.title == "The Tale of Quarterly Report Final"
+    assert story_service._safe_name("MyNotes_v2.pdf") == "MyNotes v2"
 
 
 def test_a_reply_cut_off_mid_sentence_ends_on_its_last_full_sentence():

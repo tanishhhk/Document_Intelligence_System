@@ -97,7 +97,7 @@ _providers_cache = None
 _story_providers_cache = None
 _providers_lock = threading.Lock()
 # A story is a longer reply written in the background, so it may wait longer.
-_STORY_MAX_OUTPUT_TOKENS = 2048
+_STORY_MAX_OUTPUT_TOKENS = 4096
 _slots = threading.BoundedSemaphore(settings.llm_max_concurrent_requests)
 
 

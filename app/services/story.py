@@ -159,7 +159,11 @@ def _system_instruction(strictness: str, depth: str) -> str:
 
 def _safe_name(filename: str) -> str:
     name = re.sub(r"[<>\"\r\n\t]", "", filename or "")
-    name = re.sub(r"\.pdf$", "", name, flags=re.IGNORECASE).strip()
+    name = re.sub(r"\.pdf$", "", name, flags=re.IGNORECASE)
+    # "quarterly_report" reads better as "Quarterly Report".
+    name = " ".join(re.sub(r"[_]+|(?<=\w)-(?=\w)", " ", name).split())
+    if name.islower():
+        name = name.title()
     return name[:80] or "this document"
 
 
@@ -192,6 +196,9 @@ def _key_sentences(passages: list[Passage], count: int) -> list[tuple[str, int |
         for position, sentence in enumerate(_SENTENCE_END.split(" ".join(passage.text.split()))):
             if not 40 <= len(sentence) <= 300 or sentence[-1] not in ".!?":
                 continue
+            letters = sum(char.isalpha() for char in sentence)
+            if "|" in sentence or letters < len(sentence) * 0.6:
+                continue  # Table rows and figures read badly aloud.
             score = len(sentence.split()) + (6 if re.search(r"\d", sentence) else 0)
             candidates.append((score, (order, position), sentence, passage.page_start))
     best = sorted(candidates, key=lambda item: -item[0])[:count]

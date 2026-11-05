@@ -135,7 +135,10 @@ class OpenAICompatibleProvider:
         message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
         text = _message_text(message.get("content")).strip()
         if not text:
-            raise ProviderFailure("empty", False)
+            # A reasoning model can spend the whole output limit thinking and
+            # return nothing. Another attempt, often routed to another free
+            # model, usually answers.
+            raise ProviderFailure("empty", choice.get("finish_reason") == "length")
         return text[:_MAX_ANSWER_CHARS]
 
 
