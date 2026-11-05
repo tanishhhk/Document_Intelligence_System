@@ -136,6 +136,8 @@ Logs are JSON lines on standard output (`LOG_FORMAT=text` for plain text). Each 
 | `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
 | `MAX_PDF_PAGES` | Maximum PDF pages processed | `500` |
 | `MAX_PDF_CHARS` | Maximum extracted characters | `500000` |
+| `PDF_PARSE_TIMEOUT_SECONDS` | Time limit for reading one PDF | `60` |
+| `PDF_PARSE_MEMORY_MB` | Memory limit for reading one PDF (Linux only) | `1024` |
 | `AUTH_REQUESTS_PER_MINUTE` | Request limit for login and registration | `30` |
 | `UPLOAD_REQUESTS_PER_MINUTE` | Request limit for upload | `8` |
 | `CHAT_REQUESTS_PER_MINUTE` | Request limit for questions | `20` |
@@ -219,7 +221,7 @@ Returns one document if it belongs to the authenticated user, including its proc
 | `completed` | Ready for questions; `chunk_count` and `processed_at` are set |
 | `failed` | Not searchable; `error_message` says why |
 
-A file that cannot be processed as uploaded (no selectable text, encrypted, corrupt, over the page or text limits) fails at once. Other errors are retried up to three times before the document is marked failed.
+A file that cannot be processed as uploaded (no selectable text, encrypted, corrupt, over the page or text limits) fails at once. PDFs are parsed in a separate process that is stopped after `PDF_PARSE_TIMEOUT_SECONDS` and, on Linux, limited to `PDF_PARSE_MEMORY_MB`, so a file that makes the parser loop or exhaust memory fails without stalling the worker. Other errors are retried up to three times before the document is marked failed.
 
 **`POST /documents/{document_id}/retry`**
 

@@ -14,3 +14,34 @@ def indexed(*texts: str, page: int = 1):
     """A result shaped like ingestion.extract_and_embed_pdf."""
     chunks = [Chunk(text, page, page) for text in texts]
     return chunks, [vector(i) for i in range(len(texts))], page
+
+
+# Module-level, so the isolated child process can import them.
+
+
+def sleep_forever(*_args, **_kwargs):
+    import time
+
+    time.sleep(600)
+
+
+def exit_abruptly(*_args, **_kwargs):
+    import os
+
+    os._exit(3)
+
+
+def allocate(megabytes, **_kwargs):
+    return len(bytearray(megabytes * 1024 * 1024))
+
+
+def reject(*_args, **_kwargs):
+    raise ValueError("PDF has 900 pages; the limit is 500.")
+
+
+def fail_unexpectedly(*_args, **_kwargs):
+    raise KeyError("parser bug")
+
+
+def pages_of(text, **_kwargs):
+    return [(1, text)]
