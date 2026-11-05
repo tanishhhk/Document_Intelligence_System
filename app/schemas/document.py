@@ -18,3 +18,10 @@ class DocumentResponse(BaseModel):
 # Schema for listing all documents
 class DocumentList(BaseModel):
     documents: list[DocumentResponse]
+
+
+class DocumentPage(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    limit: int
+    offset: int

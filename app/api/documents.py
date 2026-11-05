@@ -5,7 +5,9 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,7 +19,7 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.upload_idempotency import UploadIdempotency
 from app.models.user import User
-from app.schemas.document import DocumentResponse
+from app.schemas.document import DocumentPage, DocumentResponse
 from app.services import ingestion
 
 logger = logging.getLogger(__name__)
@@ -310,11 +312,42 @@ async def upload_document(
         await file.close()
 
 
-@router.get("/list", response_model=list[DocumentResponse])
+def _escape_like(value: str) -> str:
+    """Make % and _ in user input match literally in a LIKE pattern."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@router.get("", response_model=DocumentPage)
+def search_documents(
+    q: str | None = Query(default=None, min_length=1, max_length=200, description="Filename contains"),
+    document_status: Literal["queued", "processing", "completed", "failed"] | None = Query(
+        default=None, alias="status"
+    ),
+    order: Literal["newest", "oldest"] = "newest",
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List the user's documents one page at a time, filtered and sorted in the database."""
+    query = db.query(Document).filter(Document.user_id == current_user.id)
+    if q is not None:
+        query = query.filter(Document.filename.ilike(f"%{_escape_like(q)}%", escape="\\"))
+    if document_status is not None:
+        query = query.filter(Document.status == document_status)
+
+    total = query.count()
+    direction = Document.upload_date.desc() if order == "newest" else Document.upload_date.asc()
+    items = query.order_by(direction, Document.id).offset(offset).limit(limit).all()
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/list", response_model=list[DocumentResponse], deprecated=True)
 def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Every document the user owns. Use GET /documents for paging and filters."""
     return (
         db.query(Document)
         .filter(Document.user_id == current_user.id)
