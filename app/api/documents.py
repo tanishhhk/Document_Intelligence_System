@@ -40,6 +40,10 @@ def _remove_file(path: str) -> None:
 
 
 def _find_owned_document(db: Session, document_id: str, user_id: str):
+    # PostgreSQL rejects NUL bytes in text, so such an ID would raise instead of
+    # simply matching nothing. No real document ID contains one.
+    if "\x00" in document_id:
+        return None
     return (
         db.query(Document)
         .filter(Document.id == document_id, Document.user_id == user_id)
@@ -348,6 +352,11 @@ def search_documents(
     current_user: User = Depends(get_current_user),
 ):
     """List the user's documents one page at a time, filtered and sorted in the database."""
+    if q is not None and "\x00" in q:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="The search text contains an invalid character.",
+        )
     query = db.query(Document).filter(Document.user_id == current_user.id)
     if q is not None:
         query = query.filter(Document.filename.ilike(f"%{_escape_like(q)}%", escape="\\"))

@@ -349,3 +349,14 @@ def test_methods_a_route_does_not_support_are_rejected():
     client = TestClient(app)
     assert client.put("/auth/login", json={}).status_code == 405
     assert client.request("PATCH", "/documents/x").status_code in (401, 405)
+
+
+def test_nul_bytes_are_handled_without_a_database_error(two_users):
+    """PostgreSQL rejects NUL bytes in text; they must not reach a query."""
+    tokens, _document_id = two_users
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = tokens["owner"][1]
+    assert client.get("/documents/%00", headers=headers).status_code == 404
+    assert client.post("/documents/%00/retry", headers=headers).status_code == 404
+    assert client.post("/chat/ask", headers=headers, json={"question": "q", "document_id": "a\x00b"}).status_code == 404
+    assert client.get("/documents", headers=headers, params={"q": "a\x00b"}).status_code == 422

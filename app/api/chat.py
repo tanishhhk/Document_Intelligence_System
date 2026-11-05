@@ -79,14 +79,16 @@ def ask_question(
             detail="Question cannot be blank.",
         )
 
-    document = (
-        db.query(Document)
-        .filter(
-            Document.id == request.document_id,
-            Document.user_id == current_user.id,
+    document = None
+    if "\x00" not in request.document_id:  # PostgreSQL cannot compare text with NUL bytes.
+        document = (
+            db.query(Document)
+            .filter(
+                Document.id == request.document_id,
+                Document.user_id == current_user.id,
+            )
+            .first()
         )
-        .first()
-    )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
     if document.status in (ingestion.QUEUED, ingestion.PROCESSING):
