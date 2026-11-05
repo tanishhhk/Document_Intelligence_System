@@ -323,7 +323,7 @@ def test_a_question_at_the_length_limit_is_accepted(two_users, monkeypatch, db_s
         db.query(Document).filter(Document.id == document_id).update({Document.status: "completed"})
         db.commit()
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
-    monkeypatch.setattr(chat_api, "generate_answer", lambda q, s: llm.Answer("Yes [S1].", "fake", "m"))
+    monkeypatch.setattr(chat_api, "generate_answer", lambda q, s, f=None: llm.Answer("Yes [S1].", "fake", "m"))
     response = TestClient(app).post(
         "/chat/ask", headers=tokens["owner"][1], json={"question": "q" * 4000, "document_id": document_id}
     )

@@ -269,7 +269,7 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
         chat_api, "generate_single_embedding", lambda _question: vector(0)
     )
     monkeypatch.setattr(
-        chat_api, "generate_answer", lambda _question, _sources: Answer("30 days [S1]", "fake", "fake-model")
+        chat_api, "generate_answer", lambda _question, _sources, _focus=None: Answer("30 days [S1]", "fake", "fake-model")
     )
 
     response = client.post(

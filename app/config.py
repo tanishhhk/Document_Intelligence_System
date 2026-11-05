@@ -63,8 +63,13 @@ class Settings(BaseSettings):
 
     upload_dir: str = Field(default="./uploads", min_length=1)
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)
-    max_pdf_pages: int = Field(default=500, ge=1, le=10_000)
-    max_pdf_chars: int = Field(default=500_000, ge=1, le=10_000_000)
+    max_pdf_pages: int = Field(default=100, ge=1, le=10_000)
+    max_pdf_chars: int = Field(default=300_000, ge=1, le=10_000_000)
+    max_documents_per_user: int = Field(default=20, ge=1, le=100_000)
+    # Daily per-user limits, reset at midnight UTC. Free model quotas are shared by everyone.
+    daily_uploads_per_user: int = Field(default=5, ge=0, le=1_000_000)
+    daily_questions_per_user: int = Field(default=25, ge=0, le=1_000_000)
+    daily_stories_per_user: int = Field(default=3, ge=0, le=1_000_000)
     # PDFs are parsed in a child process that is stopped after this long, and
     # on Linux cannot use more than this much memory.
     pdf_parse_timeout_seconds: float = Field(default=60.0, ge=1, le=600)
@@ -81,6 +86,8 @@ class Settings(BaseSettings):
     tts_voice: str = Field(default="en-US-AriaNeural", pattern=r"^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$")
     # Stories are written in the background, so a slow free model may take longer.
     story_timeout_seconds: float = Field(default=90.0, ge=5, le=600)
+    # Reorder retrieved passages with a small cross-encoder (see app.services.reranker).
+    reranker_enabled: bool = True
     # How much document text one story is written from.
     story_source_chars: int = Field(default=12_000, ge=1_000, le=200_000)
 

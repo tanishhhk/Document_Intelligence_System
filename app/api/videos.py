@@ -13,7 +13,7 @@ from app.models.document import Document
 from app.models.user import User
 from app.models.video_job import VideoJob
 from app.schemas.video import VideoJobDetail, VideoJobResponse, VideoRequest
-from app.services import ingestion, video_jobs
+from app.services import ingestion, usage, video_jobs
 
 router = APIRouter()
 
@@ -71,6 +71,7 @@ def generate_story(
             headers={"Retry-After": "30"},
         )
 
+    usage.consume(db, current_user.id, "story")
     job = VideoJob(
         id=str(uuid.uuid4()),
         document_id=document_id,

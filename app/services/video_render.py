@@ -13,6 +13,8 @@ import re
 import subprocess
 import textwrap
 
+from app.services.speech import display_name, speakable
+
 WIDTH, HEIGHT = 1280, 720
 FPS = 6  # Slides are still images; a low frame rate keeps encoding fast.
 BACKGROUND = (18, 20, 34)
@@ -146,8 +148,8 @@ def compose(slides: list[str], weights: list[int], audio_path: str, out_path: st
 
 def render_story_video(title: str, scenes: list[tuple[str, str]], out_dir: str, voice: str) -> str:
     """Record the narration and render the video. Returns the video's path."""
-    narration = "\n\n".join([f"{title}."] + [text for _heading, text in scenes])
+    narration = speakable("\n\n".join([f"{title}."] + [text for _heading, text in scenes]))
     audio = synthesize(narration, os.path.join(out_dir, "narration.mp3"), voice)
-    slides = [title] + [heading for heading, _text in scenes]
+    slides = [display_name(title)] + [display_name(heading) for heading, _text in scenes]
     weights = [len(title.split())] + [len(text.split()) for _heading, text in scenes]
     return compose(slides, weights, audio, os.path.join(out_dir, "video.mp4"))

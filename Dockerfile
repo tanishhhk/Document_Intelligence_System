@@ -17,8 +17,8 @@ COPY requirements.txt .
 RUN pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r requirements.txt
 
-# Include the embedding model so containers start without downloading it.
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" \
+# Include the embedding and re-ranking models so containers start without downloading them.
+RUN python -c "from sentence_transformers import CrossEncoder, SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2'); CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')" \
     && chmod -R a+rX /opt/models
 
 COPY alembic.ini .

@@ -19,6 +19,7 @@ from sqlalchemy import and_, or_
 from app.config import settings
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
+from app.models.user import User
 from app.models.video_job import VideoJob
 from app.services.story import sample_passages, write_story
 from app.services.video_render import render_story_video
@@ -115,6 +116,7 @@ def _load(session_factory, job_id: str):
         if job is None:
             return None
         document = db.get(Document, job.document_id)
+        owner = db.get(User, job.user_id)
         chunks = (
             db.query(DocumentChunk.chunk_text, DocumentChunk.page_start, DocumentChunk.page_end)
             .filter(DocumentChunk.document_id == job.document_id)
@@ -125,6 +127,7 @@ def _load(session_factory, job_id: str):
             "user_id": job.user_id,
             "strictness": job.strictness,
             "depth": job.depth,
+            "focus": owner.focus if owner else None,
             "filename": document.filename if document else "",
             "chunks": [tuple(row) for row in chunks],
         }
@@ -172,7 +175,7 @@ def process_job(session_factory, job_id: str, token: str) -> None:
             )
             return
 
-        story = write_story(job["filename"], passages, job["strictness"], job["depth"])
+        story = write_story(job["filename"], passages, job["strictness"], job["depth"], job["focus"])
         story_values = {
             VideoJob.title: story.title,
             VideoJob.narration: story.narration,

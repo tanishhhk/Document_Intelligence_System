@@ -205,7 +205,7 @@ def answer_with(monkeypatch):
             chat_api, "generate_single_embedding", lambda _q: question_vector or vector(0)
         )
 
-        def fake_generate(question, sources):
+        def fake_generate(question, sources, focus=None):
             seen["sources"] = sources
             return llm.Answer(answer, "fake", "fake-model")
 
@@ -326,7 +326,7 @@ def test_each_answer_service_failure_has_its_own_response(
     add(("The fee is 30 euros.", vector(0), {}))
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
 
-    def failing(_question, _sources):
+    def failing(_question, _sources, _focus=None):
         raise llm.AnswerServiceError(kind, retry_after)
 
     monkeypatch.setattr(chat_api, "generate_answer", failing)
@@ -340,7 +340,7 @@ def test_unexpected_errors_return_a_generic_server_error(document_with_chunks, m
     add(("The fee is 30 euros.", vector(0), {}))
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
 
-    def broken(_question, _sources):
+    def broken(_question, _sources, _focus=None):
         raise KeyError("internal detail that must not reach the client")
 
     monkeypatch.setattr(chat_api, "generate_answer", broken)
@@ -386,7 +386,7 @@ def test_when_no_provider_answers_the_best_passages_are_returned_and_labelled(
     add(("The fee is 30 euros per month.", vector(0), {}), ("Payment is due on the 1st.", vector(1), {}))
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
 
-    def failing(_question, _sources):
+    def failing(_question, _sources, _focus=None):
         raise llm.AnswerServiceError(kind)
 
     monkeypatch.setattr(chat_api, "generate_answer", failing)

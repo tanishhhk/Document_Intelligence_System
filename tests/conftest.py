@@ -18,6 +18,14 @@ os.environ["AUTH_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["UPLOAD_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["CHAT_REQUESTS_PER_MINUTE"] = "100000"
 os.environ["DEFAULT_REQUESTS_PER_MINUTE"] = "100000"
+os.environ["VIDEO_REQUESTS_PER_MINUTE"] = "100000"
+# Daily limits are tested in tests/test_launch_limits.py with their own values.
+os.environ["DAILY_UPLOADS_PER_USER"] = "100000"
+os.environ["DAILY_QUESTIONS_PER_USER"] = "100000"
+os.environ["DAILY_STORIES_PER_USER"] = "100000"
+os.environ["MAX_DOCUMENTS_PER_USER"] = "100000"
+# The re-ranker model is downloaded on first use; tests use ranking without it.
+os.environ["RERANKER_ENABLED"] = "false"
 
 import uuid
 from datetime import timedelta

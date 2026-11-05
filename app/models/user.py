@@ -10,6 +10,9 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Chosen in onboarding; see app.services.lenses.
+    profession = Column(String(20), nullable=True)
+    focus = Column(String(20), nullable=True)
     
     def __repr__(self):
         return f"<User {self.email}>"

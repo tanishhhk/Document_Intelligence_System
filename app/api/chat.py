@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import get_db
 from app.models.document import Document
 from app.models.user import User
-from app.services import ingestion
+from app.services import ingestion, usage
 from app.services.embeddings import generate_single_embedding
 from app.services.llm import (
     NOT_FOUND_ANSWER,
@@ -103,7 +103,9 @@ def ask_question(
             "Retry processing or upload it again.",
         )
 
-    result = retrieve(db, document.id, generate_single_embedding(question), request.top_k)
+    usage.consume(db, current_user.id, "question")
+    db.commit()
+    result = retrieve(db, document.id, generate_single_embedding(question), request.top_k, question)
     if not result.chunks:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -112,7 +114,7 @@ def ask_question(
 
     fallback_reason = None
     try:
-        generated = generate_answer(question, result.chunks)
+        generated = generate_answer(question, result.chunks, current_user.focus)
     except AnswerServiceError as exc:
         logger.warning("Answer generation failed.", extra={"kind": exc.kind})
         if settings.answer_fallback != "extractive":
