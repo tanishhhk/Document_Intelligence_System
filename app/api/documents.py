@@ -191,6 +191,25 @@ async def _save_upload(file: UploadFile, file_path: str):
     return file_size, digest.hexdigest(), bytes(first_bytes)
 
 
+_MAX_FILENAME_CHARS = 255
+
+
+def _display_filename(raw: str | None) -> str:
+    """The name shown to the user: no directories, no control characters, at most 255 characters.
+
+    It is metadata only; files are stored under the document ID.
+    """
+    name = Path((raw or "").replace("\\", "/")).name
+    name = "".join(ch for ch in name if ch.isprintable())
+    if len(name) > _MAX_FILENAME_CHARS:
+        stem, dot, extension = name.rpartition(".")
+        if dot and len(extension) <= 10:
+            name = stem[: _MAX_FILENAME_CHARS - len(extension) - 1] + "." + extension
+        else:
+            name = name[:_MAX_FILENAME_CHARS]
+    return name
+
+
 def _wake_worker(request: Request) -> None:
     worker = getattr(request.app.state, "ingestion_worker", None)
     if worker is not None:
@@ -223,8 +242,7 @@ async def upload_document(
             detail="Idempotency-Key may contain only letters, numbers, dots, underscores, and hyphens.",
         )
 
-    raw_filename = (file.filename or "").replace("\\", "/")
-    filename = Path(raw_filename).name
+    filename = _display_filename(file.filename)
     if not filename.lower().endswith(".pdf"):
         await file.close()
         raise HTTPException(
