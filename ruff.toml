@@ -6,8 +6,3 @@ select = ["E4", "E7", "E9", "F", "B"]
 # FastAPI declares dependencies as default arguments, e.g. Depends(get_db).
 ignore = ["B008"]
 
-[lint.per-file-ignores]
-# Not imported anywhere and cannot import: it references names it never
-# defines and depends on packages that are not installed. Kept until the
-# product owner decides whether video summaries belong in this service.
-"app/services/video_generator.py" = ["F403", "F405", "B007"]
