@@ -103,6 +103,10 @@ The worker also deletes stored PDFs that have no matching document and are more 
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `30` |
 | `GEMINI_API_KEY` | Gemini API key | Required |
 | `GEMINI_MODEL` | Answer generation model | `gemini-3.8-flash` |
+| `GEMINI_TIMEOUT_SECONDS` | Timeout for one Gemini request | `20` |
+| `GEMINI_MAX_OUTPUT_TOKENS` | Output token limit per answer | `1024` |
+| `GEMINI_THINKING_LEVEL` | `low`, `medium`, `high`, or `model-default` to omit the setting for models without thinking levels | `low` |
+| `GEMINI_MAX_CONCURRENT_REQUESTS` | Gemini calls allowed at once per process | `8` |
 | `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
 | `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
 | `INGESTION_WORKER_ENABLED` | Run the document processing worker inside the API process | `true` |
@@ -221,6 +225,21 @@ The question is limited to 4,000 characters and `top_k` must be between 1 and 10
   "metadata": {"chunks_searched": 26, "chunks_skipped": 0, "top_k_used": 3, "model": "gemini-3.8-flash"}
 }
 ```
+
+Errors are distinguished so clients can react to each:
+
+| Status | Meaning |
+|---|---|
+| `200` with `answer_status: not_found` | The document does not contain the answer |
+| `404` | No such document for this user |
+| `409` | The document is still processing, failed processing, or has no usable index |
+| `422` | Invalid input |
+| `503` with `Retry-After` | Gemini is unavailable, rate limited, out of quota, or this server is at its concurrent request limit |
+| `504` with `Retry-After` | Gemini did not respond in time |
+| `502` | Gemini declined or returned an empty answer |
+| `500` | Server misconfiguration (for example an invalid `GEMINI_API_KEY`) or an unexpected error |
+
+Timeouts, rate limits and server errors from Gemini are retried up to three times with exponential backoff and jitter, honouring the provider's retry delay. A requested delay longer than 8 seconds is passed back in `Retry-After` instead of being waited out. Authentication, permission and invalid-request errors are not retried. Logs record the error type and status, never prompts, document text or provider messages.
 
 `answer_status` is `not_found` when the document does not contain the answer. Every `[S#]` in the answer refers to an entry in `sources`. Chunks indexed before page tracking was added have `null` page numbers. Chunks with unusable vectors, or vectors from a different embedding model, are skipped and counted in `chunks_skipped`.
 

@@ -11,11 +11,51 @@ from app.models.document import Document
 from app.models.user import User
 from app.services import ingestion
 from app.services.embeddings import generate_single_embedding
-from app.services.llm import NOT_FOUND_ANSWER, cited_source_ids, generate_answer
+from app.services.llm import (
+    NOT_FOUND_ANSWER,
+    AnswerServiceError,
+    cited_source_ids,
+    generate_answer,
+)
 from app.services.retrieval import retrieve
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# Status, message and default Retry-After for each AnswerServiceError kind.
+_ANSWER_SERVICE_ERRORS = {
+    "timeout": (
+        status.HTTP_504_GATEWAY_TIMEOUT,
+        "The answer service took too long to respond. Try again.",
+        5,
+    ),
+    "busy": (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "The answer service is busy or has reached its usage limit. Try again later.",
+        30,
+    ),
+    "unavailable": (
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "The answer service is temporarily unavailable. Try again shortly.",
+        10,
+    ),
+    "misconfigured": (
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "The answer service is not configured correctly. Contact the administrator.",
+        None,
+    ),
+    "rejected": (
+        status.HTTP_502_BAD_GATEWAY,
+        "The answer service could not answer this question. Try rephrasing it.",
+        None,
+    ),
+    "empty": (
+        status.HTTP_502_BAD_GATEWAY,
+        "The answer service returned an empty answer. Try rephrasing the question.",
+        None,
+    ),
+}
 
 
 class QuestionRequest(BaseModel):
@@ -69,11 +109,14 @@ def ask_question(
 
     try:
         raw_answer = generate_answer(question, result.chunks)
-    except Exception as exc:
-        logger.exception("Answer generation failed.")
+    except AnswerServiceError as exc:
+        status_code, detail, default_retry = _ANSWER_SERVICE_ERRORS[exc.kind]
+        logger.warning("Answer generation failed.", extra={"kind": exc.kind})
+        retry_after = exc.retry_after or default_retry
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The answer service is unavailable.",
+            status_code=status_code,
+            detail=detail,
+            headers={"Retry-After": str(max(1, round(retry_after)))} if retry_after else None,
         ) from exc
 
     answer, cited = cited_source_ids(raw_answer, result.chunks)
