@@ -228,3 +228,36 @@ def test_chunks_cannot_reference_missing_documents(database_url):
                 )
     finally:
         engine.dispose()
+
+
+def test_ingestion_migration_reconciles_legacy_document_states(database_url):
+    engine = create_engine(database_url)
+    try:
+        command.upgrade(_alembic(database_url), "0003")
+        _insert_sample_rows(engine)  # d1: completed with three chunks
+        with engine.begin() as connection:
+            for document_id, status in [("d2", "completed"), ("d3", "uploaded"), ("d4", None)]:
+                connection.execute(
+                    text(
+                        "INSERT INTO documents (id, user_id, filename, file_path, status) "
+                        "VALUES (:id, 'u1', 'x.pdf', 'uploads/x.pdf', :status)"
+                    ),
+                    {"id": document_id, "status": status},
+                )
+
+        command.upgrade(_alembic(database_url), "head")
+
+        with engine.connect() as connection:
+            rows = dict(
+                connection.execute(text("SELECT id, status FROM documents")).all()
+            )
+            counts = dict(connection.execute(text("SELECT id, chunk_count FROM documents")).all())
+            message = connection.execute(
+                text("SELECT error_message FROM documents WHERE id = 'd3'")
+            ).scalar()
+        assert rows == {"d1": "completed", "d2": "failed", "d3": "failed", "d4": "failed"}
+        assert counts["d1"] == 3
+        assert "Retry processing" in message
+        assert _schema_differences(engine) == []
+    finally:
+        engine.dispose()

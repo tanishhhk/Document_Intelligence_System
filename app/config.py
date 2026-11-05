@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     )
 
     auto_migrate: bool = True
+    ingestion_worker_enabled: bool = True
 
     upload_dir: str = Field(default="./uploads", min_length=1)
     max_file_size: int = Field(default=10 * 1024 * 1024, ge=1)
