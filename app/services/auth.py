@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import uuid
 
 import bcrypt
 from jose import JWTError, jwt
@@ -26,9 +27,9 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + (
-        expires_delta if expires_delta is not None else timedelta(minutes=15)
-    )
+    payload.setdefault("jti", str(uuid.uuid4()))
+    lifetime = expires_delta if expires_delta is not None else timedelta(minutes=15)
+    payload["exp"] = datetime.now(timezone.utc) + lifetime
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
