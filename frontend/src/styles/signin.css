@@ -1,0 +1,292 @@
+.signin {
+  min-height: 100vh;
+  overflow-x: clip;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(380px, 1fr);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The desk with the sample page */
+.signin-desk {
+  display: grid;
+  place-items: center;
+  padding: var(--space-7) var(--space-6);
+  background:
+    radial-gradient(120% 80% at 30% 20%, rgba(255, 255, 255, 0.05), transparent 60%),
+    var(--ink-2);
+}
+
+.hp {
+  position: relative;
+  width: min(100%, 780px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.hp-sheet {
+  position: relative;
+  background: var(--paper);
+  color: var(--ink);
+  padding: var(--space-6) var(--space-6) var(--space-7);
+  border-radius: 3px;
+  box-shadow: var(--shadow-page);
+  transform: rotate(-1.2deg);
+  user-select: none;
+  /* A highlighter tip as the pointer, hot spot at the chisel. */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M9 23 22 4l6 4-13 19z' fill='%23ffc94d' stroke='%230e2229' stroke-width='1.6' stroke-linejoin='round'/%3E%3Cpath d='M9 23l6 4-5 3-4-1z' fill='%230e2229'/%3E%3C/svg%3E") 5 30, text;
+}
+
+.hp-sheet::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -6px 6px;
+  height: 6px;
+  background: var(--page-shade);
+  border-radius: 0 0 3px 3px;
+  z-index: -1;
+}
+
+.hp-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--step--1);
+  color: var(--pencil);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.hp-title {
+  font-size: var(--step-2);
+  margin-bottom: var(--space-4);
+}
+
+.hp-text {
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  line-height: 1.85;
+  font-weight: 400;
+  max-width: 60ch;
+}
+
+.hp-sentence {
+  border-radius: 0.2em;
+  transition: background-size 500ms var(--ease-out);
+}
+
+.hp-sentence:focus-visible {
+  outline: 2px dashed var(--ink-3);
+  outline-offset: 2px;
+}
+
+.hp-live {
+  background: var(--highlight-soft);
+  border-radius: 0.2em;
+}
+
+.hp-margin {
+  padding-top: 120px;
+  color: var(--paper);
+}
+
+.hp-note {
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--step--1);
+  line-height: 1.45;
+  animation: note-in 420ms var(--ease-out) both;
+}
+
+.hp-q {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: var(--step-1);
+  line-height: 1.3;
+}
+
+.hp-q::before {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 2px;
+  margin-bottom: var(--space-3);
+  background: var(--highlight);
+}
+
+.hp-cite {
+  color: var(--ink-soft);
+}
+
+.hp-cite .folio {
+  color: var(--highlight);
+}
+
+.hp-hint {
+  color: var(--ink-soft);
+}
+
+.hp-try {
+  margin-top: var(--space-6);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+
+.hp-try strong {
+  color: var(--highlight);
+}
+
+@keyframes note-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+    filter: blur(3px);
+  }
+}
+
+/* The form */
+.signin-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-5);
+  padding: var(--space-8) clamp(var(--space-5), 5vw, var(--space-8));
+  max-width: 560px;
+}
+
+.signin-logo .logo-word {
+  color: var(--paper);
+}
+
+.signin-title {
+  font-size: var(--step-4);
+  font-weight: 600;
+  max-width: 13ch;
+  margin-top: var(--space-5);
+}
+
+.signin-lede {
+  color: var(--ink-soft);
+  max-width: 46ch;
+}
+
+.signin-switch {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--ink-2);
+  width: fit-content;
+  margin-top: var(--space-3);
+}
+
+.signin-switch button {
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-s);
+  color: var(--ink-soft);
+  font-weight: 700;
+}
+
+.signin-switch button.is-active {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.signin-form {
+  display: grid;
+  gap: var(--space-5);
+  max-width: 400px;
+}
+
+.signin-form label {
+  color: var(--paper);
+}
+
+.signin-form .input {
+  color: var(--ink);
+}
+
+.signin-form .field-hint {
+  color: var(--ink-soft);
+  min-height: 1.4em;
+}
+
+.signin-form .field-error {
+  color: #ff9a8f;
+}
+
+.input-with-action {
+  position: relative;
+}
+
+.input-with-action .input {
+  padding-right: 52px;
+}
+
+.input-action {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  color: var(--pencil);
+  border-radius: var(--radius-s);
+}
+
+.pw-meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ink-2);
+  overflow: hidden;
+}
+
+.pw-stroke {
+  display: block;
+  height: 100%;
+  background: var(--highlight);
+  transform-origin: left;
+  transition: transform 260ms var(--ease-out);
+  clip-path: polygon(0 20%, 100% 0, 100% 80%, 0 100%);
+}
+
+.signin-submit {
+  width: 100%;
+  min-height: 50px;
+  font-size: var(--step-1);
+}
+
+.signin-failure {
+  color: #ff9a8f;
+  font-weight: 600;
+}
+
+@media (max-width: 980px) {
+  .signin {
+    grid-template-columns: 1fr;
+  }
+
+  .signin-panel {
+    order: -1;
+    max-width: none;
+    padding: var(--space-7) var(--space-5) var(--space-6);
+  }
+
+  .signin-desk {
+    padding: var(--space-6) var(--space-4) var(--space-7);
+  }
+
+  .hp {
+    grid-template-columns: 1fr;
+  }
+
+  .hp-margin {
+    padding-top: 0;
+    min-height: 5.5em;
+  }
+}

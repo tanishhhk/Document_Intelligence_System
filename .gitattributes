@@ -1,0 +1,4 @@
+# Binary files must not have their line endings converted.
+*.pdf binary
+*.png binary
+*.mp4 binary
