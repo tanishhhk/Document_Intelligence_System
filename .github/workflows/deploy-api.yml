@@ -1,0 +1,33 @@
+name: Deploy API
+
+# Publishes the API to the Hugging Face Space named by the HF_SPACE repository
+# variable, using the HF_TOKEN repository secret. Skipped until both are set.
+
+on:
+  push:
+    branches: [main]
+    paths: ["app/**", "migrations/**", "Dockerfile", "requirements.txt", "alembic.ini", "scripts/deploy_space.py"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.HF_SPACE != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --quiet huggingface_hub==2.4.0
+      - name: Upload to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: python scripts/deploy_space.py

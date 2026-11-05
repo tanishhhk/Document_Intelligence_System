@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/opt/models
 
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
+# UID 1000 is the user Hugging Face Spaces runs containers as.
+RUN groupadd --system --gid 1000 app && useradd --system --uid 1000 --gid app --home-dir /app --no-create-home app
 
 # A TrueType font for video slides; the default bitmap font is unreadably small.
 RUN apt-get update     && apt-get install -y --no-install-recommends fonts-dejavu-core     && rm -rf /var/lib/apt/lists/*
@@ -23,7 +24,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 COPY alembic.ini .
 COPY migrations ./migrations
 COPY app ./app
-RUN mkdir -p /data/uploads /data/videos && chown app:app /data/uploads /data/videos
+RUN mkdir -p /data/uploads /data/videos /data/db && chown app:app /data/uploads /data/videos /data/db
 
 USER app
 ENV UPLOAD_DIR=/data/uploads     VIDEO_DIR=/data/videos \

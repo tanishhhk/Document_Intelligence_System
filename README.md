@@ -122,6 +122,14 @@ The image runs as a non-root user and includes the embedding model, so container
 
 Running in containers does not by itself make the service production ready; see the limitations below.
 
+### Hosted deployment
+
+- **Web app:** GitHub Pages. `.github/workflows/pages.yml` builds `frontend/` on every push to `main`, pointing it at the `API_URL` repository variable.
+- **API:** a Hugging Face Space (free CPU tier, 16 GB of memory), which builds the same Dockerfile. `.github/workflows/deploy-api.yml` uploads the API with `scripts/deploy_space.py` on every push to `main` once the `HF_SPACE` variable and `HF_TOKEN` secret are set.
+- **Space secrets:** set `SECRET_KEY`, an answer provider key, `CORS_ORIGINS` (the Pages origin) and `DATABASE_URL` in the Space settings.
+- **Storage:** on the free tier the container's disk is temporary, so a SQLite database at `/data/db` is cleared when the Space restarts. Use a hosted PostgreSQL `DATABASE_URL` to keep accounts and documents.
+- **Client addresses:** the Space is reached through Hugging Face's proxy, and the limiter does not trust forwarded addresses. Login and registration limits are therefore shared by all visitors, which is the safe choice for a demo.
+
 ### Health and logs
 
 - `GET /health` reports that the process is running.
