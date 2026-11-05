@@ -20,6 +20,12 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = Field(min_length=1)
     gemini_model: str = Field(default="gemini-3.8-flash", min_length=1, max_length=100)
+    gemini_timeout_seconds: float = Field(default=20.0, ge=1, le=120)
+    gemini_max_output_tokens: int = Field(default=1024, ge=64, le=8192)
+    # gemini-3.8-flash accepts low, medium and high. Use model-default for
+    # models that do not support thinking levels.
+    gemini_thinking_level: Literal["low", "medium", "high", "model-default"] = "low"
+    gemini_max_concurrent_requests: int = Field(default=8, ge=1, le=256)
 
     cors_origins: list[str] = Field(
         default_factory=lambda: [

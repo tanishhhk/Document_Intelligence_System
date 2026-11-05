@@ -16,14 +16,14 @@ class _FakeClient:
         class Models:
             def generate_content(self, *, model, contents, config):
                 client.calls.update(model=model, contents=contents, config=config)
-                return SimpleNamespace(text=answer)
+                return SimpleNamespace(text=answer, candidates=[], prompt_feedback=None)
 
         self.models = Models()
 
 
 def test_generate_answer_uses_configured_model_and_separate_instructions(monkeypatch):
     fake = _FakeClient("  Sales increased [S1].  ")
-    monkeypatch.setattr(llm, "_create_client", lambda: fake)
+    monkeypatch.setattr(llm, "_get_client", lambda: fake)
     monkeypatch.setattr(llm.settings, "gemini_model", "gemini-3.8-flash")
 
     answer = llm.generate_answer(

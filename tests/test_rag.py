@@ -305,16 +305,48 @@ def test_instructions_inside_a_document_reach_the_model_only_as_source_data(
     assert injected not in llm.SYSTEM_INSTRUCTION
 
 
-def test_answer_service_failures_return_bad_gateway(document_with_chunks, monkeypatch):
+@pytest.mark.parametrize(
+    "kind, retry_after, status_code, header",
+    [
+        ("timeout", None, 504, "5"),
+        ("busy", 12.4, 503, "12"),
+        ("busy", None, 503, "30"),
+        ("unavailable", None, 503, "10"),
+        ("misconfigured", None, 500, None),
+        ("rejected", None, 502, None),
+        ("empty", None, 502, None),
+    ],
+)
+def test_each_answer_service_failure_has_its_own_response(
+    document_with_chunks, monkeypatch, kind, retry_after, status_code, header
+):
     document_id, headers, add = document_with_chunks
     add(("The fee is 30 euros.", vector(0), {}))
     monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
 
-    def unavailable(_question, _sources):
-        raise RuntimeError("The answer service could not complete the request.")
+    def failing(_question, _sources):
+        raise llm.AnswerServiceError(kind, retry_after)
 
-    monkeypatch.setattr(chat_api, "generate_answer", unavailable)
-    assert _ask(headers, document_id).status_code == 502
+    monkeypatch.setattr(chat_api, "generate_answer", failing)
+    response = _ask(headers, document_id)
+    assert response.status_code == status_code
+    assert response.headers.get("Retry-After") == header
+
+
+def test_unexpected_errors_return_a_generic_server_error(document_with_chunks, monkeypatch):
+    document_id, headers, add = document_with_chunks
+    add(("The fee is 30 euros.", vector(0), {}))
+    monkeypatch.setattr(chat_api, "generate_single_embedding", lambda _q: vector(0))
+
+    def broken(_question, _sources):
+        raise KeyError("internal detail that must not reach the client")
+
+    monkeypatch.setattr(chat_api, "generate_answer", broken)
+    response = TestClient(app, raise_server_exceptions=False).post(
+        "/chat/ask", headers=headers, json={"question": "Fee?", "document_id": document_id}
+    )
+    assert response.status_code == 500
+    assert "internal detail" not in response.text
 
 
 # Ingestion with real extraction and chunking
