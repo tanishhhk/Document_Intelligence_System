@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     # Older videos are deleted beyond this many per user; their stories stay.
     videos_kept_per_user: int = Field(default=3, ge=1, le=100)
     tts_voice: str = Field(default="en-US-AriaNeural", pattern=r"^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$")
+    # Stories are written in the background, so a slow free model may take longer.
+    story_timeout_seconds: float = Field(default=90.0, ge=5, le=600)
     # How much document text one story is written from.
     story_source_chars: int = Field(default=12_000, ge=1_000, le=200_000)
 

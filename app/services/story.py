@@ -141,7 +141,13 @@ def parse_story(raw: str) -> tuple[str | None, list[tuple[str, str]]]:
             continue
         lines.append(line)
     flush()
-    return title, scenes[:MAX_SCENES]
+    scenes = scenes[:MAX_SCENES]
+    # A reply cut off at the output limit ends mid-sentence: end on the last full one.
+    if scenes and scenes[-1][1][-1] not in ".!?\"'”)":
+        heading, text = scenes[-1]
+        complete = text[: max(text.rfind(mark) for mark in ".!?") + 1]
+        scenes[-1:] = [(heading, complete)] if complete else []
+    return title, scenes
 
 
 def _system_instruction(strictness: str, depth: str) -> str:
@@ -165,7 +171,9 @@ def _user_message(filename: str, passages: list[Passage]) -> str:
 def write_story(filename: str, passages: list[Passage], strictness: str, depth: str) -> Story:
     """A story from the first provider that answers, else one told from the passages."""
     try:
-        answer = generate_text(_system_instruction(strictness, depth), _user_message(filename, passages))
+        answer = generate_text(
+            _system_instruction(strictness, depth), _user_message(filename, passages), long_running=True
+        )
     except AnswerServiceError as exc:
         logger.warning("No provider wrote the story; telling it from the document.", extra={"kind": exc.kind})
         return extractive_story(filename, passages)

@@ -94,7 +94,10 @@ _BASE_DELAY_SECONDS = 1.0
 _MAX_DELAY_SECONDS = 8.0
 
 _providers_cache = None
+_story_providers_cache = None
 _providers_lock = threading.Lock()
+# A story is a longer reply written in the background, so it may wait longer.
+_STORY_MAX_OUTPUT_TOKENS = 2048
 _slots = threading.BoundedSemaphore(settings.llm_max_concurrent_requests)
 
 
@@ -107,26 +110,41 @@ def configured_providers() -> list:
     return _providers_cache
 
 
+def story_providers() -> list:
+    global _story_providers_cache
+    if _story_providers_cache is None:
+        with _providers_lock:
+            if _story_providers_cache is None:
+                _story_providers_cache = build_providers(
+                    settings,
+                    timeout_seconds=settings.story_timeout_seconds,
+                    max_output_tokens=max(settings.llm_max_output_tokens, _STORY_MAX_OUTPUT_TOKENS),
+                )
+    return _story_providers_cache
+
+
 def generate_answer(question: str, sources) -> Answer:
     """Answer from the retrieved passages using the first provider that succeeds."""
     return generate_text(SYSTEM_INSTRUCTION, build_user_message(question, sources))
 
 
-def generate_text(system_instruction: str, user_message: str) -> Answer:
+def generate_text(system_instruction: str, user_message: str, long_running: bool = False) -> Answer:
     """Generate with the first provider that succeeds.
 
     Each provider gets up to two attempts for transient failures, with
     jittered exponential backoff that honours the provider's retry delay.
     Then the next provider is tried. Raises AnswerServiceError when none
-    produces an answer, with the most actionable failure kind.
+    produces an answer, with the most actionable failure kind. long_running
+    uses STORY_TIMEOUT_SECONDS and a larger output limit.
     """
-    providers = configured_providers()
+    providers = story_providers() if long_running else configured_providers()
+    timeout = settings.story_timeout_seconds if long_running else settings.llm_timeout_seconds
     if not providers:
         raise AnswerServiceError("misconfigured")
     if not _slots.acquire(timeout=5):
         raise AnswerServiceError("busy", retry_after=5)
     try:
-        deadline = time.monotonic() + settings.llm_timeout_seconds * 3
+        deadline = time.monotonic() + timeout * 3
         failures = []
         for provider in providers:
             try:

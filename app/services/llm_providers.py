@@ -248,11 +248,22 @@ class GeminiProvider:
         return text.strip()[:_MAX_ANSWER_CHARS]
 
 
-def build_providers(settings, transport: httpx.BaseTransport | None = None) -> list:
-    """Configured providers in LLM_PROVIDER_ORDER, skipping any without credentials."""
+def build_providers(
+    settings,
+    transport: httpx.BaseTransport | None = None,
+    timeout_seconds: float | None = None,
+    max_output_tokens: int | None = None,
+) -> list:
+    """Configured providers in LLM_PROVIDER_ORDER, skipping any without credentials.
+
+    timeout_seconds and max_output_tokens override the settings, for longer
+    background generations such as stories.
+    """
+    timeout_seconds = timeout_seconds or settings.llm_timeout_seconds
+    max_output_tokens = max_output_tokens or settings.llm_max_output_tokens
     common = {
-        "max_output_tokens": settings.llm_max_output_tokens,
-        "timeout_seconds": settings.llm_timeout_seconds,
+        "max_output_tokens": max_output_tokens,
+        "timeout_seconds": timeout_seconds,
         "transport": transport,
     }
     available = {}
@@ -281,8 +292,8 @@ def build_providers(settings, transport: httpx.BaseTransport | None = None) -> l
         available["gemini"] = lambda: GeminiProvider(
             settings.GEMINI_API_KEY,
             settings.gemini_model,
-            settings.llm_max_output_tokens,
-            settings.llm_timeout_seconds,
+            max_output_tokens,
+            timeout_seconds,
             settings.gemini_thinking_level,
         )
     return [available[name]() for name in settings.llm_provider_order if name in available]
