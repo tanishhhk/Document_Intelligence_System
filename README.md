@@ -124,6 +124,14 @@ Running in containers does not by itself make the service production ready; see 
 
 ### Hosted deployment
 
+To go live, add `HF_TOKEN` (a Hugging Face Write token) and `GROQ_API_KEY` or `OPENROUTER_API_KEY` to `.env`, then run:
+
+```bash
+python scripts/go_live.py
+```
+
+It creates the Space, stores its secrets there (a new `SECRET_KEY`, the model keys, `CORS_ORIGINS` for the Pages site), connects GitHub (`HF_TOKEN` secret, `HF_SPACE` and `API_URL` variables), turns on Pages and publishes the web app. Later pushes to `main` redeploy both. `scripts/load_test.py` simulates several users at once against any `BASE_URL`.
+
 - **Web app:** GitHub Pages. `.github/workflows/pages.yml` builds `frontend/` on every push to `main`, pointing it at the `API_URL` repository variable.
 - **API:** a Hugging Face Space (free CPU tier, 16 GB of memory), which builds the same Dockerfile. `.github/workflows/deploy-api.yml` uploads the API with `scripts/deploy_space.py` on every push to `main` once the `HF_SPACE` variable and `HF_TOKEN` secret are set.
 - **Space secrets:** set `SECRET_KEY`, an answer provider key, `CORS_ORIGINS` (the Pages origin) and `DATABASE_URL` in the Space settings.
