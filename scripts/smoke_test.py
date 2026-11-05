@@ -97,7 +97,26 @@ def main():
         check("Singapore" in body["answer"] and any(s["page_start"] == 4 for s in body["sources"]),
               "the fallback quotes the relevant passage from page 4")
 
+    started = client.post(f"/videos/generate/{document_id}", headers=owner, json={"depth": "overview"})
+    check(started.status_code == 202, "a story is queued")
+    story_id = started.json()["id"]
+    check(client.get(f"/videos/{story_id}", headers=stranger).status_code == 404, "another user cannot see the story")
+    deadline = time.monotonic() + 600
+    while time.monotonic() < deadline:
+        story = client.get(f"/videos/{story_id}", headers=owner).json()
+        if story["status"] in ("completed", "failed"):
+            break
+        time.sleep(2)
+    check(story["status"] == "completed" and story["scenes"], f"the story is written ({story.get('error')})")
+    check(story["story_source"] == ("ai" if EXPECT_ANSWERS else "extractive"), "the story comes from the expected source")
+    check(story["video_status"] in ("ready", "unavailable", "disabled"), f"the video has a final state ({story['video_status']})")
+    if story["video_status"] == "ready":
+        video = client.get(f"/videos/{story_id}/download", headers=owner)
+        check(video.status_code == 200 and video.content[4:8] == b"ftyp", "the video downloads as an MP4")
+    print(f"story: {story['title']!r}, video: {story['video_status']}")
+
     check(client.delete(f"/documents/{document_id}", headers=owner).status_code == 200, "delete")
+    check(client.get(f"/videos/{story_id}", headers=owner).status_code == 404, "deleting the document deletes its story")
     check(client.get(f"/documents/{document_id}", headers=owner).status_code == 404, "deleted document is gone")
 
 

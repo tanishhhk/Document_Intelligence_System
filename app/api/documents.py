@@ -19,8 +19,9 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.upload_idempotency import UploadIdempotency
 from app.models.user import User
+from app.models.video_job import VideoJob
 from app.schemas.document import DocumentPage, DocumentResponse
-from app.services import ingestion
+from app.services import ingestion, video_jobs
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -406,12 +407,16 @@ def delete_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
 
     file_path = document.file_path
+    story_ids = [row[0] for row in db.query(VideoJob.id).filter(VideoJob.document_id == document_id)]
+    db.query(VideoJob).filter(VideoJob.document_id == document_id).delete(synchronize_session=False)
     db.query(DocumentChunk).filter(
         DocumentChunk.document_id == document_id
     ).delete(synchronize_session=False)
     db.delete(document)
     db.commit()
     _remove_file(file_path)
+    for story_id in story_ids:
+        video_jobs.remove_job_files(story_id)
     return {"message": "Document deleted successfully."}
 
 

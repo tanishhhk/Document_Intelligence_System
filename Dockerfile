@@ -8,6 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app
 
+# A TrueType font for video slides; the default bitmap font is unreadably small.
+RUN apt-get update     && apt-get install -y --no-install-recommends fonts-dejavu-core     && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 # The CPU build of torch is much smaller than the default CUDA build.
 RUN pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu \
@@ -20,10 +23,10 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 COPY alembic.ini .
 COPY migrations ./migrations
 COPY app ./app
-RUN mkdir -p /data/uploads && chown app:app /data/uploads
+RUN mkdir -p /data/uploads /data/videos && chown app:app /data/uploads /data/videos
 
 USER app
-ENV UPLOAD_DIR=/data/uploads \
+ENV UPLOAD_DIR=/data/uploads     VIDEO_DIR=/data/videos \
     HF_HUB_OFFLINE=1
 EXPOSE 8000
 

@@ -14,3 +14,7 @@ google-genai==2.34.0
 httpx==0.28.1
 numpy==2.4.6
 sentence-transformers==6.2.0
+# Story videos: moviepy renders with the ffmpeg bundled by imageio-ffmpeg; edge-tts narrates.
+moviepy==2.2.1
+imageio-ffmpeg==0.8.1
+edge-tts==7.3.1

@@ -47,6 +47,8 @@ class RateLimitMiddleware:
             return "upload", self.settings.upload_requests_per_minute
         if method == "POST" and path == "/chat/ask":
             return "chat", self.settings.chat_requests_per_minute
+        if method == "POST" and len(parts) == 3 and parts[:2] == ["videos", "generate"]:
+            return "video", self.settings.video_requests_per_minute
         return "general", self.settings.default_requests_per_minute
 
     def _limits_for(self, scope, bucket, limit):

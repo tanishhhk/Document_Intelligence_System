@@ -29,7 +29,7 @@ Rules:
 _CITATION = re.compile(r"\[S(\d{1,3})\]")
 
 
-def _source_block(source) -> str:
+def source_block(source) -> str:
     if source.page_start is None:
         pages = ""
     elif source.page_start == source.page_end:
@@ -42,7 +42,7 @@ def _source_block(source) -> str:
 
 
 def build_user_message(question: str, sources) -> str:
-    blocks = "\n\n".join(_source_block(source) for source in sources)
+    blocks = "\n\n".join(source_block(source) for source in sources)
     return f"{blocks}\n\nQuestion: {question}"
 
 
@@ -108,7 +108,12 @@ def configured_providers() -> list:
 
 
 def generate_answer(question: str, sources) -> Answer:
-    """Answer from the retrieved passages using the first provider that succeeds.
+    """Answer from the retrieved passages using the first provider that succeeds."""
+    return generate_text(SYSTEM_INSTRUCTION, build_user_message(question, sources))
+
+
+def generate_text(system_instruction: str, user_message: str) -> Answer:
+    """Generate with the first provider that succeeds.
 
     Each provider gets up to two attempts for transient failures, with
     jittered exponential backoff that honours the provider's retry delay.
@@ -121,12 +126,11 @@ def generate_answer(question: str, sources) -> Answer:
     if not _slots.acquire(timeout=5):
         raise AnswerServiceError("busy", retry_after=5)
     try:
-        user_message = build_user_message(question, sources)
         deadline = time.monotonic() + settings.llm_timeout_seconds * 3
         failures = []
         for provider in providers:
             try:
-                text = _generate_with_retries(provider, user_message, deadline)
+                text = _generate_with_retries(provider, system_instruction, user_message, deadline)
                 return Answer(text, provider.name, provider.model)
             except ProviderFailure as failure:
                 failures.append(failure)
@@ -141,11 +145,11 @@ def generate_answer(question: str, sources) -> Answer:
         _slots.release()
 
 
-def _generate_with_retries(provider, user_message: str, deadline: float) -> str:
+def _generate_with_retries(provider, system_instruction: str, user_message: str, deadline: float) -> str:
     for attempt in range(1, _ATTEMPTS_PER_PROVIDER + 1):
         started = time.monotonic()
         try:
-            text = provider.generate(SYSTEM_INSTRUCTION, user_message)
+            text = provider.generate(system_instruction, user_message)
         except ProviderFailure as failure:
             # Log the failure category only: provider messages can echo
             # request details, and prompts contain private document text.

@@ -60,6 +60,12 @@ A PDF signature check does not make a file safe to parse. Parsing runs in a chil
 
 Answering a question sends the retrieved passages, which are document text, to the configured provider. Hosted free tiers may keep or train on that data. For confidential documents use a local provider (Ollama) and leave hosted providers unconfigured. Provider API keys are read from the environment and never logged.
 
+### Document stories
+
+A story sends sampled passages to the configured provider, like a question does, and its narration to Microsoft's edge-tts service to record the voice. Set `VIDEO_RENDER_ENABLED=false` to keep narration on the server; the text story is still produced.
+
+Stories are bounded: one active story per user, a separate per-minute limit (`VIDEO_REQUESTS_PER_MINUTE`), one model call per story, at most `STORY_SOURCE_CHARS` of document text, and rendering in a child process with a time and, on Linux, a memory limit. Each user keeps at most `VIDEOS_KEPT_PER_USER` videos on disk. Videos are served only to their owner, and only from inside `VIDEO_DIR`. Job errors shown to users are fixed messages, never exception text.
+
 ### Clipboard attacks
 
 The backend has no clipboard feature and does not access browser clipboard contents. Clipboard handling, if introduced in a frontend, needs a separate client-side review.

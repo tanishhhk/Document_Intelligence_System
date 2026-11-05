@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import auth, chat, documents
+from app.api import auth, chat, documents, videos
 from app.config import settings
 from app.database import SessionLocal, engine, run_migrations, schema_is_current
 from app.logging_config import configure_logging
@@ -15,6 +15,7 @@ from app.middleware.request_context import RequestContextMiddleware
 from app.services.auth import token_user_id
 from app.services.ingestion import IngestionWorker
 from app.services.llm import configured_providers
+from app.services.video_jobs import VideoWorker
 
 configure_logging(settings.log_level, settings.log_format)
 
@@ -23,14 +24,18 @@ configure_logging(settings.log_level, settings.log_format)
 async def lifespan(app: FastAPI):
     if settings.auto_migrate:
         run_migrations()
-    worker = None
+    worker = video_worker = None
     if settings.ingestion_worker_enabled:
         worker = IngestionWorker(SessionLocal, settings.upload_dir)
         worker.start()
+        video_worker = VideoWorker(SessionLocal)
+        video_worker.start()
     app.state.ingestion_worker = worker
+    app.state.video_worker = video_worker
     yield
-    if worker is not None:
-        worker.stop()
+    for running in (worker, video_worker):
+        if running is not None:
+            running.stop()
     engine.dispose()
 
 
@@ -59,6 +64,7 @@ app.add_middleware(RequestContextMiddleware)
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 app.include_router(chat.router, prefix="/chat", tags=["Chat"])
+app.include_router(videos.router, prefix="/videos", tags=["Stories and videos"])
 
 
 @app.get("/")
@@ -91,16 +97,18 @@ def readiness_check():
     # Informational: with no provider, questions get the extractive fallback.
     checks["answer_providers"] = [p.name for p in configured_providers()] or "none"
 
-    worker = getattr(app.state, "ingestion_worker", None)
-    if not settings.ingestion_worker_enabled:
-        checks["ingestion_worker"] = "disabled"
-    else:
-        checks["ingestion_worker"] = "running" if worker and worker.is_alive() else "stopped"
+    for name in ("ingestion_worker", "video_worker"):
+        worker = getattr(app.state, name, None)
+        if not settings.ingestion_worker_enabled:
+            checks[name] = "disabled"
+        else:
+            checks[name] = "running" if worker and worker.is_alive() else "stopped"
+    checks["video_rendering"] = "enabled" if settings.video_render_enabled else "disabled"
 
     ready = (
         checks["database"] == "ok"
         and checks.get("schema") == "current"
-        and checks["ingestion_worker"] != "stopped"
+        and "stopped" not in (checks["ingestion_worker"], checks["video_worker"])
     )
     return JSONResponse(
         status_code=200 if ready else 503,
