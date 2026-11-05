@@ -313,13 +313,23 @@ ruff check .
 
 CI also audits the pinned dependencies with `pip-audit`, scans the history for secrets with Gitleaks, and runs the Docker smoke test.
 
+Besides tests for each feature, the suite includes:
+
+| File | What it tries |
+|---|---|
+| `tests/test_loopholes.py` | Every route without credentials (new routes are covered automatically), cross-user access to every document operation, hostile IDs, filename and PDF-signature edge cases, credential and idempotency-key boundaries, malformed questions, and rate-limit evasion through path variants |
+| `tests/test_properties.py` | Property-based tests with [Hypothesis](https://hypothesis.readthedocs.io): chunking never loses or invents text, document text cannot escape its prompt delimiters, citations only name retrieved sources, filename search matches exactly, request IDs and filenames are always safe, the PDF reader and token decoder fail only in expected ways, and no caller exceeds its rate limit |
+| `tests/test_failure_injection.py` | Database outage, full disk, unwritable upload folder, failure after commit, worker surviving an outage, parser crashes, missing files, stalled providers, and shutdown |
+
+`HYPOTHESIS_PROFILE=nightly pytest` runs 2,000 generated examples per property instead of 60. The nightly workflow does that on SQLite and PostgreSQL, fails if retrieval quality drops below the thresholds in `scripts/evaluate_retrieval.py --check`, audits dependencies against new advisories, and runs the answer evaluation when an `OPENROUTER_API_KEY`, `GROQ_API_KEY` or `GEMINI_API_KEY` repository secret is set.
+
 ### Evaluation
 
 `tests/eval/rag_dataset.py` holds three multi-page documents and 37 labelled questions: direct facts, similar but wrong passages, tables, answers that need several passages, questions the document cannot answer, and a prompt injection inside a document.
 
 ```bash
 python scripts/evaluate_retrieval.py                     # retrieval only, no API calls
-GEMINI_API_KEY=... python scripts/evaluate_answers.py    # full answers; one Gemini call per question
+OPENROUTER_API_KEY=... python scripts/evaluate_answers.py   # full answers; one provider call per question
 ```
 
 Retrieval results with `all-MiniLM-L6-v2` on the 33 answerable questions:

@@ -40,6 +40,10 @@ def _remove_file(path: str) -> None:
 
 
 def _find_owned_document(db: Session, document_id: str, user_id: str):
+    # PostgreSQL rejects NUL bytes in text, so such an ID would raise instead of
+    # simply matching nothing. No real document ID contains one.
+    if "\x00" in document_id:
+        return None
     return (
         db.query(Document)
         .filter(Document.id == document_id, Document.user_id == user_id)
@@ -191,6 +195,25 @@ async def _save_upload(file: UploadFile, file_path: str):
     return file_size, digest.hexdigest(), bytes(first_bytes)
 
 
+_MAX_FILENAME_CHARS = 255
+
+
+def _display_filename(raw: str | None) -> str:
+    """The name shown to the user: no directories, no control characters, at most 255 characters.
+
+    It is metadata only; files are stored under the document ID.
+    """
+    name = Path((raw or "").replace("\\", "/")).name
+    name = "".join(ch for ch in name if ch.isprintable())
+    if len(name) > _MAX_FILENAME_CHARS:
+        stem, dot, extension = name.rpartition(".")
+        if dot and len(extension) <= 10:
+            name = stem[: _MAX_FILENAME_CHARS - len(extension) - 1] + "." + extension
+        else:
+            name = name[:_MAX_FILENAME_CHARS]
+    return name
+
+
 def _wake_worker(request: Request) -> None:
     worker = getattr(request.app.state, "ingestion_worker", None)
     if worker is not None:
@@ -223,8 +246,7 @@ async def upload_document(
             detail="Idempotency-Key may contain only letters, numbers, dots, underscores, and hyphens.",
         )
 
-    raw_filename = (file.filename or "").replace("\\", "/")
-    filename = Path(raw_filename).name
+    filename = _display_filename(file.filename)
     if not filename.lower().endswith(".pdf"):
         await file.close()
         raise HTTPException(
@@ -330,6 +352,11 @@ def search_documents(
     current_user: User = Depends(get_current_user),
 ):
     """List the user's documents one page at a time, filtered and sorted in the database."""
+    if q is not None and "\x00" in q:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="The search text contains an invalid character.",
+        )
     query = db.query(Document).filter(Document.user_id == current_user.id)
     if q is not None:
         query = query.filter(Document.filename.ilike(f"%{_escape_like(q)}%", escape="\\"))

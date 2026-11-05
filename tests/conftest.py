@@ -79,3 +79,16 @@ def auth_headers(db_session_factory):
         db.close()
 
 
+
+
+# Property-based test budgets. CI runs "default" on every push and "nightly"
+# on a schedule; choose one with HYPOTHESIS_PROFILE.
+from hypothesis import HealthCheck, settings as hypothesis_settings  # noqa: E402
+
+hypothesis_settings.register_profile(
+    "default", max_examples=60, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+)
+hypothesis_settings.register_profile(
+    "nightly", max_examples=2000, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+)
+hypothesis_settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))

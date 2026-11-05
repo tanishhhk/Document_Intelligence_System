@@ -1,0 +1,137 @@
+name: Nightly checks
+
+# Slower checks than the per-push workflow: deep property-based fuzzing on
+# SQLite and PostgreSQL, the retrieval quality gate, a fresh dependency
+# audit, and the answer evaluation when a provider key is available.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deep-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dis
+          POSTGRES_PASSWORD: dis-ci-only
+          POSTGRES_DB: dis_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      HYPOTHESIS_PROFILE: nightly
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Deep tests on SQLite, and migrations on PostgreSQL
+        env:
+          TEST_POSTGRES_URL: postgresql+psycopg://dis:dis-ci-only@localhost:5432/dis_test
+        run: pytest -q -W error
+      - name: Deep tests on PostgreSQL
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://dis:dis-ci-only@localhost:5432/dis_test
+        run: pytest -q -W error
+
+  retrieval-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
+      - name: Fail if retrieval quality drops below the recorded thresholds
+        env:
+          DATABASE_URL: "sqlite://"
+          SECRET_KEY: nightly-evaluation-only-secret-key-0000000000000000
+        run: python scripts/evaluate_retrieval.py --check
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Audit pinned dependencies against today's advisories
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r requirements.txt -r requirements-dev.txt --progress-spinner off
+
+  answer-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Add any of these as repository secrets to enable this job.
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: Skip when no provider key is configured
+        id: keys
+        run: |
+          if [ -n "$OPENROUTER_API_KEY$GROQ_API_KEY$GEMINI_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No provider key secret is set; skipping the answer evaluation." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.keys.outputs.present == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.keys.outputs.present == 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        if: steps.keys.outputs.present == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
+      - name: Evaluate answers and publish the summary
+        if: steps.keys.outputs.present == 'true'
+        env:
+          DATABASE_URL: "sqlite://"
+          SECRET_KEY: nightly-evaluation-only-secret-key-0000000000000000
+        run: |
+          python scripts/evaluate_answers.py > answers.json
+          python -c "import json; d = json.load(open('answers.json')); d.pop('answers'); print('### Answer evaluation\n\n\`\`\`json\n' + json.dumps(d, indent=2) + '\n\`\`\`')" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.keys.outputs.present == 'true'
+        with:
+          name: answer-evaluation
+          path: answers.json
