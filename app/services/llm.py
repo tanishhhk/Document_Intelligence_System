@@ -3,8 +3,10 @@ import random
 import re
 import threading
 import time
+from dataclasses import dataclass
 
 from app.config import settings
+from app.services.llm_providers import FAILURE_PRIORITY, ProviderFailure, build_providers
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +69,11 @@ def cited_source_ids(answer: str, sources) -> tuple[str, list[str]]:
 
 
 class AnswerServiceError(RuntimeError):
-    """Gemini could not produce an answer. kind says why; see chat.py for responses.
+    """No provider produced an answer. kind says why; see chat.py for responses.
 
     Kinds: timeout, busy (rate or quota limit, or too many concurrent
-    requests), unavailable, misconfigured, rejected, empty.
+    requests), unavailable, misconfigured (including no provider configured),
+    rejected, empty.
     """
 
     def __init__(self, kind: str, retry_after: float | None = None):
@@ -79,161 +82,121 @@ class AnswerServiceError(RuntimeError):
         self.retry_after = retry_after
 
 
-_MAX_ATTEMPTS = 3
+@dataclass(frozen=True)
+class Answer:
+    text: str
+    provider: str
+    model: str
+
+
+_ATTEMPTS_PER_PROVIDER = 2
 _BASE_DELAY_SECONDS = 1.0
 _MAX_DELAY_SECONDS = 8.0
-_MAX_ANSWER_CHARS = 8000
-_RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
-_BLOCKED_FINISH_REASONS = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
 
-_client = None
-_client_lock = threading.Lock()
-_slots = threading.BoundedSemaphore(settings.gemini_max_concurrent_requests)
+_providers_cache = None
+_providers_lock = threading.Lock()
+_slots = threading.BoundedSemaphore(settings.llm_max_concurrent_requests)
 
 
-def _create_client():
-    from google import genai
-    from google.genai import types
-
-    return genai.Client(
-        api_key=settings.GEMINI_API_KEY,
-        http_options=types.HttpOptions(timeout=int(settings.gemini_timeout_seconds * 1000)),
-    )
-
-
-def _get_client():
-    global _client
-    if _client is None:
-        with _client_lock:
-            if _client is None:
-                _client = _create_client()
-    return _client
+def configured_providers() -> list:
+    global _providers_cache
+    if _providers_cache is None:
+        with _providers_lock:
+            if _providers_cache is None:
+                _providers_cache = build_providers(settings)
+    return _providers_cache
 
 
-def _generation_config():
-    from google.genai import types
+def generate_answer(question: str, sources) -> Answer:
+    """Answer from the retrieved passages using the first provider that succeeds.
 
-    options = {
-        "system_instruction": SYSTEM_INSTRUCTION,
-        "max_output_tokens": settings.gemini_max_output_tokens,
-    }
-    if settings.gemini_thinking_level != "model-default":
-        options["thinking_config"] = types.ThinkingConfig(
-            thinking_level=settings.gemini_thinking_level.upper()
-        )
-    return types.GenerateContentConfig(**options)
-
-
-def _error_details(exc) -> list[dict]:
-    details = getattr(exc, "details", None)
-    entries = details.get("error", {}).get("details", []) if isinstance(details, dict) else []
-    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
-
-
-def _provider_retry_delay(exc) -> float | None:
-    """Read the delay from a google.rpc.RetryInfo detail, such as "7s"."""
-    for entry in _error_details(exc):
-        if entry.get("@type", "").endswith("google.rpc.RetryInfo"):
-            try:
-                return float(str(entry.get("retryDelay", "")).rstrip("s"))
-            except ValueError:
-                return None
-    return None
-
-
-def _classify(exc):
-    """Return (kind, retryable, retry_after) for a provider failure, or None if unknown."""
-    import httpx
-    from google.genai import errors
-
-    if isinstance(exc, httpx.TimeoutException):
-        return "timeout", True, None
-    if isinstance(exc, httpx.TransportError):
-        return "unavailable", True, None
-    if not isinstance(exc, errors.APIError):
-        return None
-    code = exc.code
-    if code == 429:
-        return "busy", True, _provider_retry_delay(exc)
-    if code in _RETRYABLE_STATUS:
-        return ("timeout" if code in (408, 504) else "unavailable"), True, _provider_retry_delay(exc)
-    # An invalid API key is reported as 400 with reason API_KEY_INVALID.
-    reasons = {str(entry.get("reason", "")) for entry in _error_details(exc)}
-    if code in (401, 403, 404) or any(reason.startswith("API_KEY") for reason in reasons):
-        return "misconfigured", False, None
-    return "rejected", False, None
-
-
-def _answer_text(response) -> str:
-    candidates = getattr(response, "candidates", None) or []
-    finish = getattr(candidates[0], "finish_reason", None) if candidates else None
-    finish_name = getattr(finish, "name", finish)
-    feedback = getattr(response, "prompt_feedback", None)
-    if getattr(feedback, "block_reason", None) or finish_name in _BLOCKED_FINISH_REASONS:
-        logger.warning("Gemini declined to answer.", extra={"finish_reason": finish_name})
-        raise AnswerServiceError("rejected")
-    if finish_name == "MAX_TOKENS":
-        logger.warning("Gemini answer reached the output token limit.")
-    answer = getattr(response, "text", None)
-    if not isinstance(answer, str) or not answer.strip():
-        raise AnswerServiceError("empty")
-    return answer.strip()[:_MAX_ANSWER_CHARS]
-
-
-def generate_answer(question: str, sources) -> str:
-    """Generate an answer grounded in the retrieved passages.
-
-    Retries timeouts, rate limits and server errors up to _MAX_ATTEMPTS times
-    with exponential backoff and jitter, honouring the provider's retry
-    delay. Raises AnswerServiceError when no answer can be produced.
+    Each provider gets up to two attempts for transient failures, with
+    jittered exponential backoff that honours the provider's retry delay.
+    Then the next provider is tried. Raises AnswerServiceError when none
+    produces an answer, with the most actionable failure kind.
     """
+    providers = configured_providers()
+    if not providers:
+        raise AnswerServiceError("misconfigured")
     if not _slots.acquire(timeout=5):
         raise AnswerServiceError("busy", retry_after=5)
     try:
-        return _generate(build_user_message(question, sources))
+        user_message = build_user_message(question, sources)
+        deadline = time.monotonic() + settings.llm_timeout_seconds * 3
+        failures = []
+        for provider in providers:
+            try:
+                text = _generate_with_retries(provider, user_message, deadline)
+                return Answer(text, provider.name, provider.model)
+            except ProviderFailure as failure:
+                failures.append(failure)
+                logger.warning(
+                    "Answer provider failed; trying the next one.",
+                    extra={"provider": provider.name, "kind": failure.kind, "status_code": failure.status},
+                )
+        best = min(failures, key=lambda f: FAILURE_PRIORITY.index(f.kind))
+        retry_after = max((f.retry_after or 0 for f in failures if f.kind == best.kind), default=0)
+        raise AnswerServiceError(best.kind, retry_after or None)
     finally:
         _slots.release()
 
 
-def _generate(contents: str) -> str:
-    config = _generation_config()
-    deadline = time.monotonic() + settings.gemini_timeout_seconds * 2
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+def _generate_with_retries(provider, user_message: str, deadline: float) -> str:
+    for attempt in range(1, _ATTEMPTS_PER_PROVIDER + 1):
         started = time.monotonic()
         try:
-            response = _get_client().models.generate_content(
-                model=settings.gemini_model,
-                contents=contents,
-                config=config,
-            )
-        except Exception as exc:
-            classified = _classify(exc)
-            if classified is None:
-                raise
-            kind, retryable, retry_after = classified
-            # Log the error type and status only: provider messages can echo
+            text = provider.generate(SYSTEM_INSTRUCTION, user_message)
+        except ProviderFailure as failure:
+            # Log the failure category only: provider messages can echo
             # request details, and prompts contain private document text.
             logger.warning(
-                "Gemini request failed.",
+                "Answer request failed.",
                 extra={
-                    "kind": kind,
-                    "status_code": getattr(exc, "code", None),
-                    "error_type": type(exc).__name__,
+                    "provider": provider.name,
+                    "kind": failure.kind,
+                    "status_code": failure.status,
                     "attempt": attempt,
                 },
             )
-            if not retryable or attempt == _MAX_ATTEMPTS:
-                raise AnswerServiceError(kind, retry_after) from exc
-            delay = retry_after if retry_after is not None else random.uniform(
+            if not failure.retryable or attempt == _ATTEMPTS_PER_PROVIDER:
+                raise
+            delay = failure.retry_after if failure.retry_after is not None else random.uniform(
                 0, min(_MAX_DELAY_SECONDS, _BASE_DELAY_SECONDS * 2**attempt)
             )
             if delay > _MAX_DELAY_SECONDS or time.monotonic() + delay > deadline:
-                raise AnswerServiceError(kind, retry_after) from exc
+                raise
             time.sleep(delay)
             continue
-
         logger.info(
-            "Gemini answered.",
-            extra={"attempt": attempt, "duration_ms": round((time.monotonic() - started) * 1000)},
+            "Answer generated.",
+            extra={
+                "provider": provider.name,
+                "attempt": attempt,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            },
         )
-        return _answer_text(response)
+        return text
+
+
+def extractive_answer(sources) -> tuple[str, list[str]]:
+    """A fallback built from the retrieved passages themselves, with no model.
+
+    Used when no provider can answer. The text says plainly that it is not a
+    generated answer.
+    """
+    lines = [
+        "An AI answer is not available right now. These passages from the document "
+        "are the closest matches to your question:"
+    ]
+    for source in sources:
+        if source.page_start is None:
+            where = ""
+        elif source.page_start == source.page_end:
+            where = f" (page {source.page_start})"
+        else:
+            where = f" (pages {source.page_start}-{source.page_end})"
+        excerpt = " ".join(source.text.split())
+        if len(excerpt) > 400:
+            excerpt = excerpt[:400].rsplit(" ", 1)[0] + "..."
+        lines.append(f"[{source.source_id}]{where}: {excerpt}")
+    return "\n\n".join(lines), [source.source_id for source in sources]

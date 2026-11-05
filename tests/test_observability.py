@@ -101,6 +101,7 @@ def test_readiness_passes_when_the_database_is_current(monkeypatch):
         "database": "ok",
         "schema": "current",
         "ingestion_worker": "disabled",
+        "answer_providers": "none",
     }
 
 

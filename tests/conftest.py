@@ -3,11 +3,18 @@ import os
 # Use test-only settings before application modules instantiate Pydantic Settings.
 os.environ["DATABASE_URL"] = "sqlite:///./document_intelligence.db"
 os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-for-hs512-signatures-0001"
-os.environ["GEMINI_API_KEY"] = "test-only-placeholder-key"
+# No answer provider is configured, so no test can reach a real model API.
+os.environ["GEMINI_API_KEY"] = ""
 os.environ["UPLOAD_DIR"] = "./uploads"
 os.environ["MAX_FILE_SIZE"] = "10485760"
 os.environ["AUTO_MIGRATE"] = "false"
 os.environ["INGESTION_WORKER_ENABLED"] = "false"
+# The app-wide rate limiter keeps state across tests and every test client
+# shares one address. tests/test_rate_limit.py checks limits on its own instances.
+os.environ["AUTH_REQUESTS_PER_MINUTE"] = "100000"
+os.environ["UPLOAD_REQUESTS_PER_MINUTE"] = "100000"
+os.environ["CHAT_REQUESTS_PER_MINUTE"] = "100000"
+os.environ["DEFAULT_REQUESTS_PER_MINUTE"] = "100000"
 
 import uuid
 from datetime import timedelta

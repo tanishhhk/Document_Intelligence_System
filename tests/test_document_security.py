@@ -15,6 +15,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
 from tests.database import make_test_engine
+from app.services.llm import Answer
 from tests.fakes import indexed, vector
 
 test_engine = make_test_engine()
@@ -268,7 +269,7 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
         chat_api, "generate_single_embedding", lambda _question: vector(0)
     )
     monkeypatch.setattr(
-        chat_api, "generate_answer", lambda _question, _sources: "30 days [S1]"
+        chat_api, "generate_answer", lambda _question, _sources: Answer("30 days [S1]", "fake", "fake-model")
     )
 
     response = client.post(
@@ -291,7 +292,7 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
     assert body["sources"][0]["page_start"] == 2
     assert body["sources"][0]["cited"] is True
     assert body["metadata"]["top_k_used"] == 1
-    assert body["metadata"]["model"] == settings.gemini_model
+    assert body["metadata"]["model"] == "fake-model"
 
 
 def test_top_k_and_question_length_are_bounded(client, users_and_tokens):

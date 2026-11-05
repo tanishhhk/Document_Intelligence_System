@@ -1,6 +1,6 @@
 # Local stack: PostgreSQL, a one-off migration, the API and a document worker.
 #
-#   cp .env.example .env    # then set SECRET_KEY, GEMINI_API_KEY and POSTGRES_PASSWORD
+#   cp .env.example .env    # then set SECRET_KEY, POSTGRES_PASSWORD and an answer provider
 #   docker compose up --build
 #
 # Secrets come from .env at run time; they are not copied into the image.

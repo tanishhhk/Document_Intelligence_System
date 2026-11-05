@@ -55,11 +55,26 @@ On Linux, `pip` installs the CUDA build of PyTorch by default. The service only 
 Edit `.env` before starting the service:
 
 - Set `SECRET_KEY` to a randomly generated value of at least 32 characters. You can generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
-- Set `GEMINI_API_KEY` to a key from Google AI Studio.
+- Configure at least one answer provider (see Answer providers below).
 - Set `CORS_ORIGINS` to a JSON array containing the exact origins of the frontend. The example includes common local development ports.
 - Set `DATABASE_URL` to your database connection string. SQLite is the default example.
 
-The default answer model is `gemini-3.8-flash`. Change it with `GEMINI_MODEL` if needed.
+### Answer providers
+
+Answers can come from any of these. Configure one or more; each request uses the first that works, in `LLM_PROVIDERS` order. A provider that times out, is rate limited, out of quota or misconfigured hands over to the next.
+
+| Provider | Cost | Setup | Notes |
+|---|---|---|---|
+| Ollama | Free, runs locally | Install [Ollama](https://ollama.com), `ollama pull qwen3:8b`, set `OLLAMA_MODEL=qwen3:8b` | No limits, and documents never leave the machine. Needs a capable computer. |
+| OpenRouter | Free models available | Key from openrouter.ai, set `OPENROUTER_API_KEY` | Free models end in `:free`; about 20 requests a minute and 50 a day, or 1,000 a day after buying $10 of credits. `openrouter/free` picks any available free model. Several models can be listed, comma-separated, as fallbacks. Free models change often. |
+| Groq | Free tier | Key from console.groq.com, set `GROQ_API_KEY` | Fast; limited mainly by tokens per minute. |
+| Gemini | Free tier | Key from Google AI Studio, set `GEMINI_API_KEY` | The free tier for `gemini-3.8-flash` is small (reported around 20 requests a day). |
+
+Questions send only the few retrieved passages, about 1,000 to 2,000 tokens, so a model with a small context window works; long-context models are not needed.
+
+Hosted free tiers may log or train on prompts, and prompts contain passages from users' documents. Use Ollama when documents are confidential.
+
+When no provider can answer and `ANSWER_FALLBACK=extractive` (the default), the response has `answer_status: "extractive"` and contains the best-matching passages with their pages, stating that it is not an AI answer. `metadata.fallback_reason` says why. With `ANSWER_FALLBACK=none`, the error codes listed under Questions are returned instead.
 
 Run the API:
 
@@ -98,7 +113,7 @@ The worker also deletes stored PDFs that have no matching document and are more 
 `docker-compose.yml` runs PostgreSQL, a one-off migration, the API and a separate document worker:
 
 ```bash
-cp .env.example .env   # set SECRET_KEY, GEMINI_API_KEY and POSTGRES_PASSWORD
+cp .env.example .env   # set SECRET_KEY, POSTGRES_PASSWORD and an answer provider
 docker compose up --build
 ```
 
@@ -121,12 +136,16 @@ Logs are JSON lines on standard output (`LOG_FORMAT=text` for plain text). Each 
 | `SECRET_KEY` | JWT signing key | Required |
 | `ALGORITHM` | JWT signing algorithm | `HS256` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime | `30` |
-| `GEMINI_API_KEY` | Gemini API key | Required |
-| `GEMINI_MODEL` | Answer generation model | `gemini-3.8-flash` |
-| `GEMINI_TIMEOUT_SECONDS` | Timeout for one Gemini request | `20` |
-| `GEMINI_MAX_OUTPUT_TOKENS` | Output token limit per answer | `1024` |
+| `LLM_PROVIDERS` | Answer providers to try, in order | `ollama,openrouter,groq,gemini` |
+| `LLM_TIMEOUT_SECONDS` | Timeout for one provider request | `20` |
+| `LLM_MAX_OUTPUT_TOKENS` | Output token limit per answer | `1024` |
+| `LLM_MAX_CONCURRENT_REQUESTS` | Answer requests allowed at once per process | `8` |
+| `ANSWER_FALLBACK` | `extractive` or `none`; see below | `extractive` |
+| `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | Local Ollama server; enabled when a model is set | `http://localhost:11434/v1`, none |
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | OpenRouter key and comma-separated models | none, `openrouter/free` |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Groq key and model | none, `openai/gpt-oss-120b` |
+| `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini key and model | none, `gemini-3.8-flash` |
 | `GEMINI_THINKING_LEVEL` | `low`, `medium`, `high`, or `model-default` to omit the setting for models without thinking levels | `low` |
-| `GEMINI_MAX_CONCURRENT_REQUESTS` | Gemini calls allowed at once per process | `8` |
 | `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
 | `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR` | `INFO` |

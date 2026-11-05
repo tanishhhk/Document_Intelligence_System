@@ -1,3 +1,4 @@
+"""Gemini provider error handling, and the provider chain that tries each in turn."""
 import logging
 import threading
 from types import SimpleNamespace
@@ -7,9 +8,13 @@ import pytest
 from google.genai import errors
 
 from app.services import llm
+from app.services.llm_providers import GeminiProvider, ProviderFailure
 from app.services.retrieval import RetrievedChunk
 
 SOURCES = [RetrievedChunk("S1", 0, "The fee is 30 euros.", 1, 1, 0.9)]
+
+
+# Gemini provider
 
 
 def _ok(text="The fee is 30 euros [S1].", finish="STOP"):
@@ -27,123 +32,65 @@ def _api_error(code, status="", message="", retry_delay=None, reason=None):
     if retry_delay is not None:
         details.append({"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": retry_delay})
     payload = {"error": {"code": code, "status": status, "message": message, "details": details}}
-    cls = errors.ClientError if code < 500 else errors.ServerError
-    return cls(code, payload)
+    return (errors.ClientError if code < 500 else errors.ServerError)(code, payload)
 
 
-@pytest.fixture()
-def provider(monkeypatch):
-    """A fake Gemini client that plays back a list of results or exceptions."""
-    state = {"script": [], "calls": [], "sleeps": []}
+def _gemini(outcome, thinking="low"):
+    provider = GeminiProvider("key", "gemini-3.8-flash", 512, 20, thinking)
+    calls = []
 
     class Models:
         def generate_content(self, *, model, contents, config):
-            state["calls"].append({"model": model, "contents": contents, "config": config})
-            outcome = state["script"].pop(0)
+            calls.append({"model": model, "contents": contents, "config": config})
             if isinstance(outcome, BaseException):
                 raise outcome
             return outcome
 
-    monkeypatch.setattr(llm, "_get_client", lambda: SimpleNamespace(models=Models()))
-    monkeypatch.setattr(llm.time, "sleep", state["sleeps"].append)
-    return state
+    provider._client = SimpleNamespace(models=Models())
+    return provider, calls
 
 
-def test_a_successful_answer_uses_the_configured_limits(provider, monkeypatch):
-    monkeypatch.setattr(llm.settings, "gemini_max_output_tokens", 512)
-    monkeypatch.setattr(llm.settings, "gemini_thinking_level", "low")
-    provider["script"] = [_ok()]
-
-    assert llm.generate_answer("What is the fee?", SOURCES) == "The fee is 30 euros [S1]."
-    config = provider["calls"][0]["config"]
+def test_gemini_sends_instructions_separately_with_limits():
+    provider, calls = _gemini(_ok())
+    assert provider.generate("RULES", "<source>text</source>") == "The fee is 30 euros [S1]."
+    config = calls[0]["config"]
+    assert calls[0]["model"] == "gemini-3.8-flash"
+    assert config.system_instruction == "RULES"
     assert config.max_output_tokens == 512
     assert config.thinking_config.thinking_level.value == "LOW"
-    assert config.system_instruction == llm.SYSTEM_INSTRUCTION
 
 
-def test_thinking_configuration_can_be_left_to_the_model(provider, monkeypatch):
-    monkeypatch.setattr(llm.settings, "gemini_thinking_level", "model-default")
-    provider["script"] = [_ok()]
-    llm.generate_answer("What is the fee?", SOURCES)
-    assert provider["calls"][0]["config"].thinking_config is None
-
-
-@pytest.mark.parametrize(
-    "failure",
-    [
-        _api_error(429, "RESOURCE_EXHAUSTED"),
-        _api_error(500, "INTERNAL"),
-        _api_error(503, "UNAVAILABLE"),
-        httpx.ReadTimeout("timed out"),
-        httpx.ConnectError("connection refused"),
-    ],
-    ids=["rate-limit", "server-error", "unavailable", "timeout", "network"],
-)
-def test_transient_failures_are_retried(provider, failure):
-    provider["script"] = [failure, _ok()]
-    assert llm.generate_answer("What is the fee?", SOURCES).startswith("The fee")
-    assert len(provider["calls"]) == 2
-    assert len(provider["sleeps"]) == 1
-    assert 0 <= provider["sleeps"][0] <= llm._MAX_DELAY_SECONDS
-
-
-def test_retries_stop_after_the_attempt_limit(provider):
-    provider["script"] = [_api_error(503, "UNAVAILABLE")] * llm._MAX_ATTEMPTS
-    with pytest.raises(llm.AnswerServiceError) as raised:
-        llm.generate_answer("What is the fee?", SOURCES)
-    assert raised.value.kind == "unavailable"
-    assert len(provider["calls"]) == llm._MAX_ATTEMPTS
-    assert len(provider["sleeps"]) == llm._MAX_ATTEMPTS - 1
-
-
-def test_backoff_grows_and_stays_within_the_cap(provider, monkeypatch):
-    monkeypatch.setattr(llm.random, "uniform", lambda low, high: high)
-    provider["script"] = [_api_error(500)] * llm._MAX_ATTEMPTS
-    with pytest.raises(llm.AnswerServiceError):
-        llm.generate_answer("What is the fee?", SOURCES)
-    assert provider["sleeps"] == [2.0, 4.0]
-
-
-def test_the_provider_retry_delay_is_honoured(provider):
-    provider["script"] = [_api_error(429, "RESOURCE_EXHAUSTED", retry_delay="3s"), _ok()]
-    llm.generate_answer("What is the fee?", SOURCES)
-    assert provider["sleeps"] == [3.0]
-
-
-def test_long_provider_delays_are_passed_back_instead_of_waited_out(provider):
-    provider["script"] = [_api_error(429, "RESOURCE_EXHAUSTED", retry_delay="40s")]
-    with pytest.raises(llm.AnswerServiceError) as raised:
-        llm.generate_answer("What is the fee?", SOURCES)
-    assert raised.value.kind == "busy"
-    assert raised.value.retry_after == 40.0
-    assert provider["sleeps"] == []
+def test_gemini_thinking_can_be_left_to_the_model():
+    provider, calls = _gemini(_ok(), thinking="model-default")
+    provider.generate("RULES", "question")
+    assert calls[0]["config"].thinking_config is None
 
 
 @pytest.mark.parametrize(
-    "failure, kind",
+    "failure, kind, retryable, retry_after",
     [
+        (_api_error(429, "RESOURCE_EXHAUSTED", retry_delay="3s"), "busy", True, 3.0),
+        (_api_error(500, "INTERNAL"), "unavailable", True, None),
+        (_api_error(503, "UNAVAILABLE"), "unavailable", True, None),
+        (_api_error(504, "DEADLINE_EXCEEDED"), "timeout", True, None),
+        (httpx.ReadTimeout("timed out"), "timeout", True, None),
+        (httpx.ConnectError("refused"), "unavailable", True, None),
         # Shape of the real response for an invalid key.
-        (
-            _api_error(
-                400, "INVALID_ARGUMENT", "API key not valid. Please pass a valid API key.",
-                reason="API_KEY_INVALID",
-            ),
-            "misconfigured",
-        ),
-        (_api_error(401, "UNAUTHENTICATED"), "misconfigured"),
-        (_api_error(403, "PERMISSION_DENIED"), "misconfigured"),
-        (_api_error(404, "NOT_FOUND", "models/unknown is not found"), "misconfigured"),
-        (_api_error(400, "INVALID_ARGUMENT", "Request contains an invalid argument."), "rejected"),
+        (_api_error(400, "INVALID_ARGUMENT", "API key not valid.", reason="API_KEY_INVALID"),
+         "misconfigured", False, None),
+        (_api_error(401, "UNAUTHENTICATED"), "misconfigured", False, None),
+        (_api_error(403, "PERMISSION_DENIED"), "misconfigured", False, None),
+        (_api_error(404, "NOT_FOUND"), "misconfigured", False, None),
+        (_api_error(400, "INVALID_ARGUMENT", "Request contains an invalid argument."), "rejected", False, None),
     ],
-    ids=["invalid-key", "unauthenticated", "forbidden", "unknown-model", "invalid-request"],
+    ids=["rate-limit", "internal", "unavailable", "deadline", "timeout", "network", "invalid-key",
+         "unauthenticated", "forbidden", "unknown-model", "invalid-request"],
 )
-def test_permanent_failures_are_not_retried(provider, failure, kind):
-    provider["script"] = [failure]
-    with pytest.raises(llm.AnswerServiceError) as raised:
-        llm.generate_answer("What is the fee?", SOURCES)
-    assert raised.value.kind == kind
-    assert len(provider["calls"]) == 1
-    assert provider["sleeps"] == []
+def test_gemini_failures_are_classified(failure, kind, retryable, retry_after):
+    provider, _calls = _gemini(failure)
+    with pytest.raises(ProviderFailure) as raised:
+        provider.generate("RULES", "question")
+    assert (raised.value.kind, raised.value.retryable, raised.value.retry_after) == (kind, retryable, retry_after)
 
 
 @pytest.mark.parametrize(
@@ -156,52 +103,155 @@ def test_permanent_failures_are_not_retried(provider, failure, kind):
     ],
     ids=["safety-block", "prompt-blocked", "blank", "missing-text"],
 )
-def test_blocked_and_empty_responses_are_reported(provider, response, kind):
-    provider["script"] = [response]
-    with pytest.raises(llm.AnswerServiceError) as raised:
-        llm.generate_answer("What is the fee?", SOURCES)
+def test_gemini_blocked_and_empty_responses_are_failures(response, kind):
+    provider, _calls = _gemini(response)
+    with pytest.raises(ProviderFailure) as raised:
+        provider.generate("RULES", "question")
     assert raised.value.kind == kind
 
 
-def test_answers_cut_off_by_the_token_limit_are_returned(provider, caplog):
-    provider["script"] = [_ok(text="The fee is 30", finish="MAX_TOKENS")]
+def test_gemini_answers_cut_off_by_the_token_limit_are_kept(caplog):
+    provider, _calls = _gemini(_ok(text="The fee is 30", finish="MAX_TOKENS"))
     with caplog.at_level(logging.WARNING):
-        assert llm.generate_answer("What is the fee?", SOURCES) == "The fee is 30"
+        assert provider.generate("RULES", "question") == "The fee is 30"
     assert "output token limit" in caplog.text
 
 
-def test_overlong_answers_are_truncated(provider):
-    provider["script"] = [_ok(text="x" * 20_000)]
-    assert len(llm.generate_answer("What is the fee?", SOURCES)) == llm._MAX_ANSWER_CHARS
-
-
-def test_unexpected_exceptions_are_not_disguised_as_provider_errors(provider):
-    provider["script"] = [KeyError("bug in our code")]
+def test_gemini_unexpected_exceptions_propagate():
+    provider, _calls = _gemini(KeyError("bug"))
     with pytest.raises(KeyError):
-        llm.generate_answer("What is the fee?", SOURCES)
+        provider.generate("RULES", "question")
 
 
-def test_logs_do_not_contain_document_text_or_provider_messages(provider, caplog):
+def test_gemini_client_is_created_once_with_a_timeout(monkeypatch):
+    created = []
+    monkeypatch.setattr("google.genai.Client", lambda **kwargs: created.append(kwargs) or object())
+    provider = GeminiProvider("key", "gemini-3.8-flash", 512, 12.5, "low")
+    assert provider._get_client() is provider._get_client()
+    assert len(created) == 1
+    assert created[0]["http_options"].timeout == 12500
+
+
+# Provider chain
+
+
+class ScriptedProvider:
+    def __init__(self, name, *outcomes):
+        self.name = name
+        self.model = f"{name}-model"
+        self.outcomes = list(outcomes)
+        self.calls = 0
+
+    def generate(self, system_instruction, user_message):
+        self.calls += 1
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
+@pytest.fixture()
+def chain(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(llm.time, "sleep", sleeps.append)
+
+    def use(*providers):
+        monkeypatch.setattr(llm, "_providers_cache", list(providers))
+        return sleeps
+
+    return use
+
+
+def test_the_first_working_provider_answers(chain):
+    first, second = ScriptedProvider("ollama", "From Ollama [S1]."), ScriptedProvider("openrouter", "unused")
+    chain(first, second)
+    answer = llm.generate_answer("What is the fee?", SOURCES)
+    assert answer == llm.Answer("From Ollama [S1].", "ollama", "ollama-model")
+    assert second.calls == 0
+
+
+def test_a_transient_failure_is_retried_on_the_same_provider(chain):
+    provider = ScriptedProvider("groq", ProviderFailure("unavailable", True), "Answer [S1].")
+    sleeps = chain(provider)
+    assert llm.generate_answer("q", SOURCES).text == "Answer [S1]."
+    assert provider.calls == 2
+    assert len(sleeps) == 1 and 0 <= sleeps[0] <= llm._MAX_DELAY_SECONDS
+
+
+def test_a_failing_provider_hands_over_to_the_next(chain):
+    broken = ScriptedProvider("openrouter", ProviderFailure("misconfigured", False))
+    exhausted = ScriptedProvider("groq", ProviderFailure("busy", True), ProviderFailure("busy", True))
+    working = ScriptedProvider("gemini", "Gemini answer [S1].")
+    chain(broken, exhausted, working)
+
+    answer = llm.generate_answer("q", SOURCES)
+    assert answer.provider == "gemini"
+    assert (broken.calls, exhausted.calls, working.calls) == (1, 2, 1)
+
+
+def test_when_every_provider_fails_the_most_actionable_reason_is_reported(chain):
+    chain(
+        ScriptedProvider("openrouter", ProviderFailure("misconfigured", False)),
+        ScriptedProvider("groq", ProviderFailure("busy", False, retry_after=4.0)),
+        ScriptedProvider("gemini", ProviderFailure("busy", False, retry_after=6.0)),
+    )
+    with pytest.raises(llm.AnswerServiceError) as raised:
+        llm.generate_answer("q", SOURCES)
+    assert raised.value.kind == "busy"
+    assert raised.value.retry_after == 6.0
+
+
+def test_no_configured_provider_is_a_configuration_error(chain):
+    chain()
+    with pytest.raises(llm.AnswerServiceError) as raised:
+        llm.generate_answer("q", SOURCES)
+    assert raised.value.kind == "misconfigured"
+
+
+def test_provider_retry_delays_are_honoured_and_long_ones_skip_ahead(chain):
+    slow = ScriptedProvider("openrouter", ProviderFailure("busy", True, retry_after=40.0))
+    quick = ScriptedProvider("groq", ProviderFailure("busy", True, retry_after=3.0), "Answer [S1].")
+    sleeps = chain(slow, quick)
+    assert llm.generate_answer("q", SOURCES).provider == "groq"
+    assert slow.calls == 1  # 40 s is longer than the cap, so move on instead of waiting.
+    assert sleeps == [3.0]
+
+
+def test_backoff_stays_within_the_cap(chain, monkeypatch):
+    monkeypatch.setattr(llm.random, "uniform", lambda low, high: high)
+    sleeps = chain(ScriptedProvider("groq", ProviderFailure("unavailable", True), ProviderFailure("unavailable", True)))
+    with pytest.raises(llm.AnswerServiceError):
+        llm.generate_answer("q", SOURCES)
+    assert sleeps == [2.0]
+
+
+def test_unexpected_exceptions_are_not_disguised_as_provider_failures(chain):
+    chain(ScriptedProvider("groq", KeyError("bug in our code")), ScriptedProvider("gemini", "unused"))
+    with pytest.raises(KeyError):
+        llm.generate_answer("q", SOURCES)
+
+
+def test_logs_do_not_contain_document_text(chain, caplog):
     secret = "Salary of the chief executive is 950,000 euros."
-    provider["script"] = [_api_error(400, "INVALID_ARGUMENT", f"Bad request near: {secret}")]
-    sources = [RetrievedChunk("S1", 0, secret, 1, 1, 0.9)]
-    with caplog.at_level(logging.DEBUG):
-        with pytest.raises(llm.AnswerServiceError):
-            llm.generate_answer("What is the salary?", sources)
+    chain(ScriptedProvider("groq", ProviderFailure("rejected", False, status=400)))
+    with caplog.at_level(logging.DEBUG), pytest.raises(llm.AnswerServiceError):
+        llm.generate_answer("What is the salary?", [RetrievedChunk("S1", 0, secret, 1, 1, 0.9)])
     assert "950,000" not in caplog.text
-    assert "test-only-placeholder-key" not in caplog.text
 
 
-def test_concurrent_requests_beyond_the_limit_are_turned_away(monkeypatch):
-    monkeypatch.setattr(llm, "_slots", threading.BoundedSemaphore(1))
+def test_concurrent_requests_beyond_the_limit_are_turned_away(chain, monkeypatch):
     entered, release = threading.Event(), threading.Event()
 
-    def slow(_contents):
-        entered.set()
-        release.wait(5)
-        return "done"
+    class Blocking:
+        name, model = "groq", "groq-model"
 
-    monkeypatch.setattr(llm, "_generate", slow)
+        def generate(self, *_args):
+            entered.set()
+            release.wait(5)
+            return "done"
+
+    chain(Blocking())
+    monkeypatch.setattr(llm, "_slots", threading.BoundedSemaphore(1))
     worker = threading.Thread(target=llm.generate_answer, args=("q", SOURCES))
     worker.start()
     try:
@@ -214,19 +264,3 @@ def test_concurrent_requests_beyond_the_limit_are_turned_away(monkeypatch):
     finally:
         release.set()
         worker.join(5)
-
-
-def test_the_client_is_created_once_with_a_timeout(monkeypatch):
-    created = []
-    monkeypatch.setattr(llm, "_client", None)
-    monkeypatch.setattr(llm.settings, "gemini_timeout_seconds", 12.5)
-
-    def fake_client(**kwargs):
-        created.append(kwargs)
-        return object()
-
-    monkeypatch.setattr("google.genai.Client", fake_client)
-    first, second = llm._get_client(), llm._get_client()
-    assert first is second
-    assert len(created) == 1
-    assert created[0]["http_options"].timeout == 12500
