@@ -17,5 +17,8 @@ class UploadIdempotency(Base):
     idempotency_key = Column(String, nullable=False)
     document_id = Column(String, nullable=True)
     status = Column(String, nullable=False, default="processing")
+    payload_sha256 = Column(String(64), nullable=True)
+    lease_expires_at = Column(Integer, nullable=True)
+    lease_token = Column(String(36), nullable=True)
     expires_at = Column(Integer, nullable=False, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

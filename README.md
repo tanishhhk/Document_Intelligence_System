@@ -132,7 +132,20 @@ Requires the bearer token. The current access token is added to the revocation t
 
 **`POST /documents/upload`**
 
-Multipart form upload with a `file` field and an `Idempotency-Key` header. The key must contain 16 to 128 letters, numbers, dots, underscores, or hyphens. Use a new key for each new upload operation. Reusing a completed key for the same user returns the existing document instead of repeating ingestion work.
+Multipart form upload with a `file` field and an `Idempotency-Key` header. The key must contain 16 to 128 letters, numbers, dots, underscores, or hyphens. Use a new key for each new upload operation.
+
+| Retry with the same key | Result |
+|---|---|
+| Same file, earlier upload completed | `201` with the original document; nothing is processed again |
+| Different file | `409`; a key belongs to one file |
+| Earlier upload still processing | `409` with `Retry-After` |
+| Earlier upload failed | Processed again |
+| Earlier upload stopped without finishing, for example on a server restart | Processed again once its 15-minute processing lease expires |
+| The document created with the key was deleted | `409`; use a new key |
+
+Files are compared by SHA-256. Keys expire after 24 hours.
+
+Request bodies are limited before they are read: uploads to `MAX_FILE_SIZE` plus 64 KiB of multipart framing, and other requests to 1 MiB.
 
 **`GET /documents/list`**
 
@@ -174,7 +187,8 @@ The tests use a local SQLite database by default and mock the embedding and answ
 
 ## Limitations
 
-- The rate limiter stores state in each process. Use a shared store or trusted gateway for multi-worker deployments.
+- The rate limiter stores state in each process. Each worker and instance counts separately. Use a shared store such as Redis or a trusted gateway for multi-worker deployments.
+- Behind a reverse proxy, start Uvicorn with `--proxy-headers --forwarded-allow-ips=<proxy address>` so the limiter sees client addresses instead of the proxy's.
 - Rate limiting and upload caps do not replace network-level DDoS protection.
 - Scanned PDFs need an OCR implementation.
 - Retrieval scans stored vectors in Python, which may become slow as the number of chunks grows.

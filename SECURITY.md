@@ -8,7 +8,7 @@ These notes describe the current API implementation. They are not a penetration 
 - Signed access tokens expire and include a token ID. Logout records the token ID as revoked.
 - Document routes filter by the authenticated user's ID.
 - Uploads are limited by file size, PDF signature, page count, and extracted character count. Failed uploads are cleaned up.
-- Upload requests require a per-user idempotency key. A completed request with the same key does not repeat document ingestion.
+- Upload requests require a per-user idempotency key bound to the file's SHA-256. Replaying a completed key with the same file returns the original document; a different file is rejected. Claims carry a processing lease, so a crashed upload does not block its key, and a request that outlives its lease cannot complete it.
 - Questions have a length limit, and retrieval count is bounded.
 - CORS uses explicit origins from configuration. Wildcard origins are rejected.
 - Runtime secret configuration is read from environment variables. Local environment files are ignored by Git, except for the example template.
@@ -38,7 +38,11 @@ Upload idempotency keys prevent duplicate ingestion work for the same user and k
 
 ### HTTP resource exhaustion
 
-Requests are rate limited by peer IP and route group. Upload size, page count, extracted text length, question length, and retrieval count are capped. The rate limiter is in-process and has a bounded tracking map. It is not a distributed rate limiter or network-level DDoS defense. Put a trusted gateway or shared rate limit store in front of multi-worker or public deployments.
+Request bodies are size-checked before they are read, so an oversized upload is refused before Starlette spools it to disk. Upload size, page count, extracted text length, question length, and retrieval count are also capped.
+
+Requests are rate limited per route group. Requests with a validly signed token count per user and also toward their address at ten times the per-user limit, so users sharing an address do not block each other and rotating accounts from one address stays bounded. Login, registration and unauthenticated requests count per peer address. When the tracking map is full, the least recently used entry is evicted; earlier versions rejected every new caller, which let anyone with enough source addresses lock out all other users.
+
+The limiter is in-process. It is not a distributed rate limiter or network-level DDoS defense. Put a trusted gateway or shared rate limit store in front of multi-worker or public deployments. The limiter ignores `X-Forwarded-For`; behind a proxy, configure Uvicorn's `--forwarded-allow-ips` instead.
 
 ### Clipboard attacks
 
