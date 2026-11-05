@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from app.api import chat as chat_api
-from app.api import documents as documents_api
+from app.services import ingestion
 from app.config import settings
 from app.database import Base, get_db
 from app.main import app
@@ -169,9 +169,9 @@ def test_upload_sets_server_side_owner_and_indexes_chunks(
     owner, _stranger, owner_token, _stranger_token = users_and_tokens
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
     monkeypatch.setattr(
-        documents_api,
-        "_extract_and_embed_pdf",
-        lambda _path: (["Example passage"], [[0.1, 0.2]]),
+        ingestion,
+        "extract_and_embed_pdf",
+        lambda _data: (["Example passage"], [[0.1, 0.2]]),
     )
 
     response = client.post(
@@ -181,6 +181,8 @@ def test_upload_sets_server_side_owner_and_indexes_chunks(
     )
     assert response.status_code == 201, response.text
     result = response.json()
+    assert result["status"] == "queued"
+    assert ingestion.process_pending(TestingSessionLocal) == 1
 
     db = TestingSessionLocal()
     try:
@@ -228,17 +230,28 @@ def test_scan_without_selectable_text_is_rejected(client, users_and_tokens, monk
     _owner, _stranger, owner_token, _stranger_token = users_and_tokens
     monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
 
-    def no_text(_path):
-        raise ValueError("No selectable text was found. Scanned or image-only PDFs need OCR.")
+    def no_text(_data):
+        raise ingestion.DocumentRejected(
+            "No selectable text was found. Scanned or image-only PDFs need OCR."
+        )
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", no_text)
+    monkeypatch.setattr(ingestion, "extract_and_embed_pdf", no_text)
     response = client.post(
         "/documents/upload",
         headers={**bearer(owner_token), "Idempotency-Key": "upload-test-0004"},
         files={"file": ("scan.pdf", b"%PDF-1.7\nscan", "application/pdf")},
     )
-    assert response.status_code == 422
-    assert list(tmp_path.iterdir()) == []
+    assert response.status_code == 201
+    ingestion.process_pending(TestingSessionLocal)
+
+    document = client.get(f"/documents/{response.json()['id']}", headers=bearer(owner_token)).json()
+    assert document["status"] == "failed"
+    assert "OCR" in document["error_message"]
+    assert client.post(
+        "/chat/ask",
+        headers=bearer(owner_token),
+        json={"question": "What is this?", "document_id": document["id"]},
+    ).status_code == 409
 
 
 def test_chat_uses_owned_document_and_returns_source_metadata(
@@ -299,7 +312,7 @@ def test_replayed_upload_with_same_key_returns_existing_document(
         calls["count"] += 1
         return ["Example passage"], [[0.1, 0.2]]
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", fake_extract)
+    monkeypatch.setattr(ingestion, "extract_and_embed_pdf", fake_extract)
     headers = {
         **bearer(owner_token),
         "Idempotency-Key": "same-upload-request-0001",
@@ -318,6 +331,7 @@ def test_replayed_upload_with_same_key_returns_existing_document(
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
     assert first.json()["id"] == second.json()["id"]
+    ingestion.process_pending(TestingSessionLocal)
     assert calls["count"] == 1
 
 

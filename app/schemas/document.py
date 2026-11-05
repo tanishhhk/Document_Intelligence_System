@@ -10,6 +10,9 @@ class DocumentResponse(BaseModel):
     file_size: int
     upload_date: datetime
     status: str
+    error_message: str | None = None
+    chunk_count: int | None = None
+    processed_at: datetime | None = None
 
 # Schema for listing all documents
 class DocumentList(BaseModel):

@@ -5,17 +5,25 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, chat, documents
 from app.config import settings
-from app.database import run_migrations
+from app.database import SessionLocal, run_migrations
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.services.auth import token_user_id
+from app.services.ingestion import IngestionWorker
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(app: FastAPI):
     if settings.auto_migrate:
         run_migrations()
+    worker = None
+    if settings.ingestion_worker_enabled:
+        worker = IngestionWorker(SessionLocal, settings.upload_dir)
+        worker.start()
+    app.state.ingestion_worker = worker
     yield
+    if worker is not None:
+        worker.stop()
 
 
 app = FastAPI(

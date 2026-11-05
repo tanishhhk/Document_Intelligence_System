@@ -2,75 +2,20 @@ import asyncio
 import threading
 import time
 import uuid
-from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
 from app.api import documents as documents_api
+from app.services import ingestion
 from app.config import settings
-from app.database import Base, enable_sqlite_foreign_keys, get_db
 from app.main import app
 from app.middleware.body_limit import BodySizeLimitMiddleware
 from app.models.document import Document
-from app.models.document_chunk import DocumentChunk
 from app.models.upload_idempotency import UploadIdempotency
-from app.models.user import User
-from app.services.auth import create_access_token, get_password_hash
-from tests.database import TEST_DATABASE_URL
 
 PDF_A = b"%PDF-1.7\nfirst document"
 PDF_B = b"%PDF-1.7\nsecond, different document"
-
-
-@pytest.fixture()
-def db_session_factory(tmp_path, monkeypatch):
-    """A real file or server database, so concurrent requests use separate connections."""
-    if TEST_DATABASE_URL:
-        engine = create_engine(TEST_DATABASE_URL)
-    else:
-        engine = create_engine(
-            f"sqlite:///{(tmp_path / 'idempotency.db').as_posix()}",
-            connect_args={"check_same_thread": False, "timeout": 30},
-        )
-        enable_sqlite_foreign_keys(engine)
-    Base.metadata.create_all(engine)
-    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-    def override_get_db():
-        db = factory()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app.dependency_overrides[get_db] = override_get_db
-    monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
-    yield factory
-    app.dependency_overrides.clear()
-    Base.metadata.drop_all(engine)
-    engine.dispose()
-
-
-@pytest.fixture()
-def auth_headers(db_session_factory):
-    db = db_session_factory()
-    try:
-        user = User(
-            id=str(uuid.uuid4()),
-            email="uploader@example.com",
-            hashed_password=get_password_hash("UploaderPassword123!"),
-        )
-        db.add(user)
-        db.commit()
-        token = create_access_token(
-            {"sub": user.email, "user_id": user.id}, expires_delta=timedelta(minutes=5)
-        )
-        return user.id, {"Authorization": f"Bearer {token}"}
-    finally:
-        db.close()
 
 
 @pytest.fixture()
@@ -81,7 +26,7 @@ def ingest_calls(monkeypatch):
         calls.append(path)
         return ["Example passage"], [[0.1, 0.2]]
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", fake_extract)
+    monkeypatch.setattr(ingestion, "extract_and_embed_pdf", fake_extract)
     return calls
 
 
@@ -119,8 +64,11 @@ def test_same_key_and_same_file_returns_the_original_document(
     assert first.status_code == 201, first.text
     assert second.status_code == 201, second.text
     assert second.json()["id"] == first.json()["id"]
-    assert len(ingest_calls) == 1
+    assert _count(db_session_factory, Document) == 1
     assert _uploaded_files() == [f"{first.json()['id']}.pdf"]
+
+    assert ingestion.process_pending(db_session_factory) == 1
+    assert len(ingest_calls) == 1
 
 
 def test_same_key_with_a_different_file_is_rejected(
@@ -134,46 +82,55 @@ def test_same_key_with_a_different_file_is_rejected(
     assert first.status_code == 201
     assert second.status_code == 409
     assert "different file" in second.json()["detail"]
-    assert len(ingest_calls) == 1
     assert _count(db_session_factory, Document) == 1
     assert _uploaded_files() == [f"{first.json()['id']}.pdf"]
 
 
-def test_failed_processing_releases_the_key_for_a_retry(
+def _pause_after_claim(monkeypatch, action):
+    """Run action(claim) right after the upload claims its key."""
+    original_claim = documents_api._claim_idempotency_key
+
+    def claim_then_act(*args):
+        claim, existing = original_claim(*args)
+        if claim is not None:
+            action(claim)
+        return claim, existing
+
+    monkeypatch.setattr(documents_api, "_claim_idempotency_key", claim_then_act)
+
+
+def test_a_failure_after_claiming_releases_the_key_for_a_retry(
     db_session_factory, auth_headers, monkeypatch
 ):
     _user_id, headers = auth_headers
-    attempts = []
+    real_document = documents_api.Document
 
-    def flaky_extract(_path):
-        attempts.append(1)
-        if len(attempts) == 1:
-            raise RuntimeError("embedding model failed to load")
-        return ["Example passage"], [[0.1, 0.2]]
+    def failing_document(**_values):
+        raise RuntimeError("database connection dropped")
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", flaky_extract)
+    monkeypatch.setattr(documents_api, "Document", failing_document)
     client = TestClient(app)
     failed = _upload(client, headers, "retry-after-failure-1")
+    monkeypatch.setattr(documents_api, "Document", real_document)
     retried = _upload(client, headers, "retry-after-failure-1")
 
     assert failed.status_code == 500
     assert retried.status_code == 201, retried.text
     assert _count(db_session_factory, Document) == 1
-    assert _count(db_session_factory, DocumentChunk) == 1
+    assert len(_uploaded_files()) == 1
 
 
 def test_a_key_that_is_still_processing_returns_a_conflict(
     db_session_factory, auth_headers, monkeypatch
 ):
     _user_id, headers = auth_headers
-    started, release = threading.Event(), threading.Event()
+    claimed, release = threading.Event(), threading.Event()
 
-    def slow_extract(_path):
-        started.set()
+    def hold(_claim):
+        claimed.set()
         assert release.wait(10)
-        return ["Example passage"], [[0.1, 0.2]]
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", slow_extract)
+    _pause_after_claim(monkeypatch, hold)
     results = {}
 
     def first_request():
@@ -182,7 +139,8 @@ def test_a_key_that_is_still_processing_returns_a_conflict(
     worker = threading.Thread(target=first_request)
     worker.start()
     try:
-        assert started.wait(10)
+        assert claimed.wait(10)
+        monkeypatch.undo()
         duplicate = _upload(TestClient(app), headers, "still-processing-0001")
     finally:
         release.set()
@@ -195,24 +153,23 @@ def test_a_key_that_is_still_processing_returns_a_conflict(
     assert _count(db_session_factory, Document) == 1
 
 
-def test_concurrent_duplicate_uploads_ingest_once(db_session_factory, auth_headers, monkeypatch):
+def test_concurrent_duplicate_uploads_create_one_document(
+    db_session_factory, auth_headers, monkeypatch
+):
     _user_id, headers = auth_headers
-    calls = []
     gate = threading.Barrier(2)
     original_claim = documents_api._claim_idempotency_key
 
     def synchronized_claim(*args):
-        # Line both requests up just before the claim insert.
+        # Line both requests up just before the claim insert, then keep the
+        # winner busy long enough for the other to see its claim.
         gate.wait(10)
-        return original_claim(*args)
-
-    def fake_extract(path):
-        calls.append(path)
-        time.sleep(0.2)
-        return ["Example passage"], [[0.1, 0.2]]
+        claim, existing = original_claim(*args)
+        if claim is not None:
+            time.sleep(0.3)
+        return claim, existing
 
     monkeypatch.setattr(documents_api, "_claim_idempotency_key", synchronized_claim)
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", fake_extract)
     responses = []
 
     def send():
@@ -225,7 +182,6 @@ def test_concurrent_duplicate_uploads_ingest_once(db_session_factory, auth_heade
         thread.join(20)
 
     assert sorted(r.status_code for r in responses) == [201, 409]
-    assert len(calls) == 1
     assert _count(db_session_factory, Document) == 1
     assert _count(db_session_factory, UploadIdempotency) == 1
     assert len(_uploaded_files()) == 1
@@ -263,7 +219,6 @@ def test_a_stale_processing_claim_is_recovered(
     response = _upload(TestClient(app), headers, "crashed-upload-key-01")
 
     assert response.status_code == 201, response.text
-    assert len(ingest_calls) == 1
     db = db_session_factory()
     try:
         claim = db.query(UploadIdempotency).one()
@@ -289,21 +244,19 @@ def test_a_request_that_lost_its_lease_does_not_create_a_document(
 ):
     _user_id, headers = auth_headers
 
-    def extract_then_lose_lease(_path):
+    def lose_lease(_claim):
         db = db_session_factory()
         try:
             db.query(UploadIdempotency).update({UploadIdempotency.lease_token: "taken-over"})
             db.commit()
         finally:
             db.close()
-        return ["Example passage"], [[0.1, 0.2]]
 
-    monkeypatch.setattr(documents_api, "_extract_and_embed_pdf", extract_then_lose_lease)
+    _pause_after_claim(monkeypatch, lose_lease)
     response = _upload(TestClient(app), headers, "lost-lease-upload-01")
 
     assert response.status_code == 409
     assert _count(db_session_factory, Document) == 0
-    assert _count(db_session_factory, DocumentChunk) == 0
     assert _count(db_session_factory, UploadIdempotency) == 1  # The new owner's claim stays.
     assert _uploaded_files() == []
 

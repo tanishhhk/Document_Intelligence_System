@@ -13,8 +13,8 @@ A FastAPI service for uploading PDF documents, searching their text, and answeri
 
 ## Request flow
 
-1. A user uploads a PDF.
-2. The service extracts selectable text and splits it into chunks.
+1. A user uploads a PDF. The service stores it and queues the document.
+2. A background worker extracts selectable text and splits it into chunks.
 3. The embedding model converts chunks to vectors, which are stored with the document.
 4. A question is embedded and compared with the document chunks.
 5. The most relevant chunks are sent to Gemini as context.
@@ -67,6 +67,10 @@ Run the API:
 uvicorn app.main:app --reload
 ```
 
+The interactive API documentation is available at `http://localhost:8000/docs`.
+
+The first operation that needs embeddings downloads the MiniLM model weights.
+
 The schema is managed with Alembic. By default the API upgrades the database to the latest revision when it starts. Databases created by earlier versions of the project, before migrations existed, are upgraded in place and keep their rows.
 
 When more than one process shares a database, set `AUTO_MIGRATE=false` and run the upgrade once before starting the processes:
@@ -77,9 +81,17 @@ alembic upgrade head
 
 Create a new revision after changing a model with `alembic revision --autogenerate -m "describe the change"`, then review the generated file. `tests/test_migrations.py` fails if the models and the migrations disagree.
 
-The interactive API documentation is available at `http://localhost:8000/docs`.
+### Document processing
 
-The first operation that needs embeddings downloads the MiniLM model weights.
+Each API process runs one background worker thread that processes queued documents. Processing state lives in the database, so documents queued or interrupted by a restart are picked up again when a worker starts. Several workers can run against one database; each document is claimed by one of them under a 15-minute lease.
+
+To run processing separately from the API, set `INGESTION_WORKER_ENABLED=false` on the API processes and start one or more workers:
+
+```bash
+python -m app.worker
+```
+
+The worker also deletes stored PDFs that have no matching document and are more than an hour old, such as files left behind by a crash.
 
 ## Configuration
 
@@ -93,6 +105,7 @@ The first operation that needs embeddings downloads the MiniLM model weights.
 | `GEMINI_MODEL` | Answer generation model | `gemini-3.8-flash` |
 | `CORS_ORIGINS` | Explicit browser origins allowed by CORS | Local development origins |
 | `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
+| `INGESTION_WORKER_ENABLED` | Run the document processing worker inside the API process | `true` |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored | `./uploads` |
 | `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
 | `MAX_PDF_PAGES` | Maximum PDF pages processed | `500` |
@@ -134,6 +147,8 @@ Requires the bearer token. The current access token is added to the revocation t
 
 Multipart form upload with a `file` field and an `Idempotency-Key` header. The key must contain 16 to 128 letters, numbers, dots, underscores, or hyphens. Use a new key for each new upload operation.
 
+The response is `201` with the new document in the `queued` state. Processing happens in the background; poll `GET /documents/{document_id}` until the status is `completed` or `failed`. Asking a question about a document that is not completed returns `409`.
+
 | Retry with the same key | Result |
 |---|---|
 | Same file, earlier upload completed | `201` with the original document; nothing is processed again |
@@ -153,7 +168,20 @@ Lists documents owned by the authenticated user.
 
 **`GET /documents/{document_id}`**
 
-Returns one document if it belongs to the authenticated user.
+Returns one document if it belongs to the authenticated user, including its processing state:
+
+| `status` | Meaning |
+|---|---|
+| `queued` | Stored and waiting for the worker |
+| `processing` | Being extracted and embedded |
+| `completed` | Ready for questions; `chunk_count` and `processed_at` are set |
+| `failed` | Not searchable; `error_message` says why |
+
+A file that cannot be processed as uploaded (no selectable text, encrypted, corrupt, over the page or text limits) fails at once. Other errors are retried up to three times before the document is marked failed.
+
+**`POST /documents/{document_id}/retry`**
+
+Queues a failed document for processing again. Returns `409` if the document is not in the `failed` state or its stored file is gone.
 
 **`DELETE /documents/{document_id}`**
 

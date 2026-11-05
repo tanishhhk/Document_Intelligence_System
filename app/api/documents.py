@@ -5,11 +5,10 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile, status
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.api.dependencies import get_current_user
 from app.config import settings
@@ -19,44 +18,14 @@ from app.models.document_chunk import DocumentChunk
 from app.models.upload_idempotency import UploadIdempotency
 from app.models.user import User
 from app.schemas.document import DocumentResponse
-from app.services.embeddings import generate_embeddings
-from app.utils.pdf_processor import extract_text_from_pdf
-from app.utils.text_processor import chunk_text as split_text
+from app.services import ingestion
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _READ_CHUNK_SIZE = 1024 * 1024
 _IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
-# Longer than ingestion of a maximum-size PDF is expected to take.
+# Covers storing the upload and queuing it; processing has its own lease.
 _PROCESSING_LEASE_SECONDS = 15 * 60
-
-
-def _extract_and_embed_pdf(file_path: str):
-    """Extract and embed a bounded amount of PDF text."""
-    try:
-        extracted_text = extract_text_from_pdf(
-            file_path,
-            max_pages=settings.max_pdf_pages,
-            max_chars=settings.max_pdf_chars,
-        )
-    except ValueError:
-        raise
-    except Exception as exc:
-        raise ValueError(
-            "The PDF could not be read. Check that it is a valid, unencrypted PDF."
-        ) from exc
-
-    if not extracted_text or not extracted_text.strip():
-        raise ValueError("No selectable text was found. Scanned PDFs need OCR.")
-
-    chunks = split_text(extracted_text)
-    if not chunks:
-        raise ValueError("The PDF did not produce any text chunks.")
-
-    embeddings = generate_embeddings(chunks)
-    if len(embeddings) != len(chunks):
-        raise RuntimeError("Embedding generation returned an unexpected number of vectors.")
-    return chunks, embeddings
 
 
 def _remove_file(path: str) -> None:
@@ -220,8 +189,15 @@ async def _save_upload(file: UploadFile, file_path: str):
     return file_size, digest.hexdigest(), bytes(first_bytes)
 
 
+def _wake_worker(request: Request) -> None:
+    worker = getattr(request.app.state, "ingestion_worker", None)
+    if worker is not None:
+        worker.wake()
+
+
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     idempotency_key: str = Header(
         ...,
@@ -232,7 +208,11 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a PDF once per user-supplied idempotency key."""
+    """Store a PDF and queue it for processing, once per idempotency key.
+
+    The response has status "queued"; poll GET /documents/{id} until it is
+    "completed" or "failed".
+    """
     allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
     if any(char not in allowed for char in idempotency_key):
         await file.close()
@@ -276,34 +256,16 @@ async def upload_document(
             _remove_file(file_path)
             return existing_document
 
-        try:
-            chunks, embeddings = await run_in_threadpool(_extract_and_embed_pdf, file_path)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=str(exc),
-            ) from exc
-
         document = Document(
             id=document_id,
             user_id=current_user.id,
             filename=filename,
             file_path=file_path,
             file_size=file_size,
-            status="completed",
+            status=ingestion.QUEUED,
         )
         db.add(document)
         db.flush()
-
-        for index, (chunk_text, embedding) in enumerate(zip(chunks, embeddings)):
-            chunk = DocumentChunk(
-                id=str(uuid.uuid4()),
-                document_id=document_id,
-                chunk_index=index,
-                chunk_text=chunk_text,
-            )
-            chunk.set_embedding(embedding)
-            db.add(chunk)
 
         finished = (
             db.query(UploadIdempotency)
@@ -327,6 +289,7 @@ async def upload_document(
             )
         db.commit()
         db.refresh(document)
+        _wake_worker(request)
         return document
 
     except HTTPException:
@@ -338,10 +301,10 @@ async def upload_document(
         db.rollback()
         _release_idempotency_claim(db, claim)
         _remove_file(file_path)
-        logger.exception("PDF ingestion failed.")
+        logger.exception("PDF upload failed.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="The PDF could not be processed. Check the server logs.",
+            detail="The PDF could not be stored. Try again later.",
         ) from exc
     finally:
         await file.close()
@@ -390,3 +353,47 @@ def delete_document(
     db.commit()
     _remove_file(file_path)
     return {"message": "Document deleted successfully."}
+
+
+@router.post("/{document_id}/retry", response_model=DocumentResponse)
+def retry_document(
+    document_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Queue a failed document for processing again."""
+    document = _find_owned_document(db, document_id, current_user.id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    if not os.path.isfile(document.file_path):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The original file is no longer available. Upload it again.",
+        )
+
+    requeued = (
+        db.query(Document)
+        .filter(
+            Document.id == document_id,
+            Document.user_id == current_user.id,
+            Document.status == ingestion.FAILED,
+        )
+        .update(
+            {
+                Document.status: ingestion.QUEUED,
+                Document.attempts: 0,
+                Document.error_message: None,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    if requeued != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only documents whose processing failed can be retried.",
+        )
+    db.refresh(document)
+    _wake_worker(request)
+    return document

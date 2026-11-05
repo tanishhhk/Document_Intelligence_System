@@ -1,22 +1,30 @@
+from io import BytesIO
 from pathlib import Path
 
 from pypdf import PdfReader
 
 
 def extract_text_from_pdf(
-    file_path: str,
+    source: str | bytes,
     max_pages: int = 500,
     max_chars: int = 500_000,
 ) -> str:
-    """Extract selectable PDF text with server-side page and character caps."""
-    path = Path(file_path)
-    if not path.is_file():
-        raise FileNotFoundError(f"PDF file not found: {file_path}")
+    """Extract selectable PDF text with server-side page and character caps.
+
+    source is a file path or the PDF's bytes.
+    """
+    if isinstance(source, bytes):
+        stream = BytesIO(source)
+    else:
+        path = Path(source)
+        if not path.is_file():
+            raise FileNotFoundError(f"PDF file not found: {source}")
+        stream = str(path)
     if max_pages < 1 or max_chars < 1:
         raise ValueError("PDF limits must be positive.")
 
     try:
-        reader = PdfReader(str(path), strict=True)
+        reader = PdfReader(stream, strict=True)
         page_count = len(reader.pages)
         if page_count > max_pages:
             raise ValueError(f"PDF has {page_count} pages; the limit is {max_pages}.")

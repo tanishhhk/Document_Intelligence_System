@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.user import User
+from app.services import ingestion
 from app.services.embeddings import generate_single_embedding
 from app.services.llm import generate_answer
 
@@ -62,6 +63,17 @@ def ask_question(
     )
     if document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
+    if document.status in (ingestion.QUEUED, ingestion.PROCESSING):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This document is still being processed. Try again shortly.",
+        )
+    if document.status == ingestion.FAILED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Processing failed for this document, so it cannot be searched. "
+            "Retry processing or upload it again.",
+        )
 
     chunks = (
         db.query(DocumentChunk)
