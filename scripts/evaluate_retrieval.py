@@ -1,6 +1,9 @@
 """Measure retrieval quality on the evaluation set in tests/eval/rag_dataset.py.
 
-    python scripts/evaluate_retrieval.py
+    python scripts/evaluate_retrieval.py [--check]
+
+With --check, exits non-zero if the page-aware chunker falls below
+THRESHOLDS, so CI can catch retrieval regressions.
 
 Compares the original fixed-size character chunker with the page-aware
 chunker, using the real embedding model. For each answerable question:
@@ -100,6 +103,28 @@ def evaluate(strategy):
     return summary
 
 
+# Minimums for the page-aware chunker. Measured values when they were set:
+# hit@1 0.939, hit@3 0.970, MRR 0.985, page@1 0.970, no evidence split.
+THRESHOLDS = {"hit@1": 0.90, "hit@3": 0.95, "mrr": 0.95, "page@1": 0.90}
+
+
+def check(summary) -> list[str]:
+    problems = [
+        f"{metric} {summary[metric]} is below {minimum}"
+        for metric, minimum in THRESHOLDS.items()
+        if summary[metric] < minimum
+    ]
+    if not summary["evidence_split_by_chunking"].startswith("0/"):
+        problems.append(f"evidence split by chunking: {summary['evidence_split_by_chunking']}")
+    return problems
+
+
 if __name__ == "__main__":
-    for name in STRATEGIES:
-        print(json.dumps(evaluate(name), indent=2))
+    results = {name: evaluate(name) for name in STRATEGIES}
+    for summary in results.values():
+        print(json.dumps(summary, indent=2))
+    if "--check" in sys.argv:
+        problems = check(results["page_aware"])
+        for problem in problems:
+            print(f"REGRESSION: {problem}")
+        sys.exit(1 if problems else 0)

@@ -1,10 +1,10 @@
 """Measure answer quality on the evaluation set with the configured Gemini model.
 
-    GEMINI_API_KEY=... python scripts/evaluate_answers.py
+    OPENROUTER_API_KEY=... python scripts/evaluate_answers.py
 
 Runs the real pipeline for every question: PDF extraction, chunking and
 embedding, retrieval, answer generation and citation checks. It calls the
-Gemini API once per question, which costs quota.
+configured answer providers once per question, which uses quota.
 
 Reported measures:
 - answered: share of answerable questions that got an answer, not "not found"
@@ -30,8 +30,9 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-if __name__ == "__main__" and not os.environ.get("GEMINI_API_KEY"):
-    sys.exit("Set GEMINI_API_KEY to run the answer evaluation.")
+_PROVIDER_SETTINGS = ("OLLAMA_MODEL", "OPENROUTER_API_KEY", "GROQ_API_KEY", "GEMINI_API_KEY")
+if __name__ == "__main__" and not any(os.environ.get(name) for name in _PROVIDER_SETTINGS):
+    sys.exit(f"Configure an answer provider ({', '.join(_PROVIDER_SETTINGS)}) to run the answer evaluation.")
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("SECRET_KEY", "evaluation-only-secret-key-" + "x" * 32)
 
@@ -116,6 +117,8 @@ def run(answer_fn=llm.generate_answer, top_k: int = 3) -> dict:
         except Exception as exc:  # Recorded, so one failure does not stop the run.
             raw = ""
             print(f"{question['id']}: {type(exc).__name__}", file=sys.stderr)
+        if hasattr(raw, "text"):
+            raw = raw.text
         latency = time.monotonic() - started
 
         answer, cited = llm.cited_source_ids(raw, result.chunks)
