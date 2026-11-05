@@ -15,6 +15,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
 from tests.database import make_test_engine
+from tests.fakes import indexed, vector
 
 test_engine = make_test_engine()
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine, expire_on_commit=False)
@@ -90,8 +91,12 @@ def add_document(owner, *, text=None):
                 document_id=document_id,
                 chunk_index=0,
                 chunk_text=text,
+                page_start=2,
+                page_end=2,
+                embedding_model="all-MiniLM-L6-v2",
+                embedding_dim=384,
             )
-            chunk.set_embedding([1.0, 0.0])
+            chunk.set_embedding(vector(0))
             db.add(chunk)
         db.commit()
         return document_id
@@ -171,7 +176,7 @@ def test_upload_sets_server_side_owner_and_indexes_chunks(
     monkeypatch.setattr(
         ingestion,
         "extract_and_embed_pdf",
-        lambda _data: (["Example passage"], [[0.1, 0.2]]),
+        lambda _data: indexed("Example passage"),
     )
 
     response = client.post(
@@ -260,10 +265,10 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
     owner, _stranger, owner_token, _stranger_token = users_and_tokens
     document_id = add_document(owner, text="The cancellation window is 30 days.")
     monkeypatch.setattr(
-        chat_api, "generate_single_embedding", lambda _question: [1.0, 0.0]
+        chat_api, "generate_single_embedding", lambda _question: vector(0)
     )
     monkeypatch.setattr(
-        chat_api, "generate_answer", lambda _question, _context: "30 days"
+        chat_api, "generate_answer", lambda _question, _sources: "30 days [S1]"
     )
 
     response = client.post(
@@ -277,9 +282,14 @@ def test_chat_uses_owned_document_and_returns_source_metadata(
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["answer"] == "30 days"
+    assert body["answer"] == "30 days [S1]"
+    assert body["answer_status"] == "answered"
+    assert body["document_id"] == document_id
     assert body["document_name"] == "policy.pdf"
+    assert body["sources"][0]["source_id"] == "S1"
     assert body["sources"][0]["chunk_index"] == 0
+    assert body["sources"][0]["page_start"] == 2
+    assert body["sources"][0]["cited"] is True
     assert body["metadata"]["top_k_used"] == 1
     assert body["metadata"]["model"] == settings.gemini_model
 
@@ -310,7 +320,7 @@ def test_replayed_upload_with_same_key_returns_existing_document(
 
     def fake_extract(_path):
         calls["count"] += 1
-        return ["Example passage"], [[0.1, 0.2]]
+        return indexed("Example passage")
 
     monkeypatch.setattr(ingestion, "extract_and_embed_pdf", fake_extract)
     headers = {
@@ -419,7 +429,9 @@ def test_pdf_processor_enforces_page_and_character_caps(monkeypatch, tmp_path):
     monkeypatch.setattr(
         pdf_processor,
         "PdfReader",
-        lambda *_args, **_kwargs: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "abc")] * 2),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            is_encrypted=False, pages=[SimpleNamespace(extract_text=lambda: "abc")] * 2
+        ),
     )
     with pytest.raises(ValueError, match="pages"):
         pdf_processor.extract_text_from_pdf(str(file_path), max_pages=1, max_chars=100)
@@ -427,7 +439,9 @@ def test_pdf_processor_enforces_page_and_character_caps(monkeypatch, tmp_path):
     monkeypatch.setattr(
         pdf_processor,
         "PdfReader",
-        lambda *_args, **_kwargs: SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "abcdef")]),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            is_encrypted=False, pages=[SimpleNamespace(extract_text=lambda: "abcdef")]
+        ),
     )
     with pytest.raises(ValueError, match="character"):
         pdf_processor.extract_text_from_pdf(str(file_path), max_pages=2, max_chars=4)
