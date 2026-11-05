@@ -2,7 +2,7 @@ import os
 
 # Use test-only settings before application modules instantiate Pydantic Settings.
 os.environ["DATABASE_URL"] = "sqlite:///./document_intelligence.db"
-os.environ["SECRET_KEY"] = "test-only-secret-key-with-at-least-32-characters"
+os.environ["SECRET_KEY"] = "test-only-secret-key-that-is-long-enough-for-hs512-signatures-0001"
 os.environ["GEMINI_API_KEY"] = "test-only-placeholder-key"
 os.environ["UPLOAD_DIR"] = "./uploads"
 os.environ["MAX_FILE_SIZE"] = "10485760"

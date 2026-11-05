@@ -1,6 +1,8 @@
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
+import jwt
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -8,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.auth import router
+from app.config import settings
 from app.database import Base, get_db
 from app.models.user import User
 from app.services.auth import decode_access_token
@@ -131,3 +134,80 @@ def test_logout_revokes_the_access_token():
             headers={"Authorization": f"Bearer {token}"},
         )
         assert replay.status_code == 401
+
+
+def _registered_user(client, email="claims@example.com"):
+    client.post("/auth/register", json={"email": email, "password": "StrongPassword123!"})
+    db = TestingSessionLocal()
+    try:
+        return db.query(User).filter(User.email == email).one()
+    finally:
+        db.close()
+
+
+def _claims(user, **overrides):
+    claims = {
+        "sub": user.email,
+        "user_id": user.id,
+        "jti": str(uuid.uuid4()),
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+    }
+    claims.update(overrides)
+    return {key: value for key, value in claims.items() if value is not None}
+
+
+@pytest.mark.parametrize(
+    "make_token",
+    [
+        pytest.param(
+            lambda user: jwt.encode(
+                _claims(user, exp=datetime.now(timezone.utc) - timedelta(seconds=5)),
+                settings.secret_key,
+                algorithm="HS256",
+            ),
+            id="expired",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(_claims(user), "w" * 64, algorithm="HS256"),
+            id="wrong-signing-secret",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(_claims(user), settings.secret_key, algorithm="HS512"),
+            id="unsupported-algorithm",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(_claims(user), None, algorithm="none"),
+            id="unsigned-alg-none",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(_claims(user, jti=None), settings.secret_key, algorithm="HS256"),
+            id="missing-token-id",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(
+                _claims(user, user_id=str(uuid.uuid4())), settings.secret_key, algorithm="HS256"
+            ),
+            id="user-id-does-not-match-subject",
+        ),
+        pytest.param(
+            lambda user: jwt.encode(_claims(user), settings.secret_key, algorithm="HS256")[:-4] + "AAAA",
+            id="tampered-signature",
+        ),
+    ],
+)
+def test_protected_routes_reject_invalid_tokens(make_token):
+    with TestClient(app) as client:
+        user = _registered_user(client)
+        response = client.post(
+            "/auth/logout",
+            headers={"Authorization": f"Bearer {make_token(user)}"},
+        )
+        assert response.status_code == 401
+
+
+def test_protected_routes_require_an_authorization_header():
+    with TestClient(app) as client:
+        assert client.post("/auth/logout").status_code == 401
+        assert client.post(
+            "/auth/logout", headers={"Authorization": "Basic dXNlcjpwYXNz"}
+        ).status_code == 401

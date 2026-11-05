@@ -50,6 +50,8 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
+On Linux, `pip` installs the CUDA build of PyTorch by default. The service only needs the CPU build, which is much smaller. Install it first with `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+
 Edit `.env` before starting the service:
 
 - Set `SECRET_KEY` to a randomly generated value of at least 32 characters. You can generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
