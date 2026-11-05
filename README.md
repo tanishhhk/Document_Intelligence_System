@@ -221,7 +221,7 @@ Returns one document if it belongs to the authenticated user, including its proc
 | `completed` | Ready for questions; `chunk_count` and `processed_at` are set |
 | `failed` | Not searchable; `error_message` says why |
 
-A file that cannot be processed as uploaded (no selectable text, encrypted, corrupt, over the page or text limits) fails at once. PDFs are parsed in a separate process that is stopped after `PDF_PARSE_TIMEOUT_SECONDS` and, on Linux, limited to `PDF_PARSE_MEMORY_MB`, so a file that makes the parser loop or exhaust memory fails without stalling the worker. Other errors are retried up to three times before the document is marked failed.
+A file that cannot be processed as uploaded (no selectable text, encrypted, corrupt, over the page or text limits) fails at once. PDFs are parsed in a separate process that is stopped after `PDF_PARSE_TIMEOUT_SECONDS` and, on Linux, limited to `PDF_PARSE_MEMORY_MB`, so a file that makes the parser loop or exhaust memory fails without stalling the worker. Other errors are retried up to three times, waiting 30 seconds times the attempt number in between, before the document is marked failed.
 
 **`POST /documents/{document_id}/retry`**
 

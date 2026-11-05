@@ -34,6 +34,9 @@ FAILED = "failed"
 
 MAX_ATTEMPTS = 3
 LEASE_SECONDS = 15 * 60
+# A document that failed for a transient reason waits this long, times the
+# attempt number, before it is processed again.
+RETRY_DELAY_SECONDS = 30
 POLL_SECONDS = 2.0
 ORPHAN_FILE_AGE_SECONDS = 60 * 60
 ORPHAN_SWEEP_SECONDS = 60 * 60
@@ -90,8 +93,13 @@ def extract_and_embed_pdf(pdf_bytes: bytes):
 
 
 def _claimable(now: int):
+    # For queued documents lease_expires_at is a "not before" time set after a
+    # transient failure; for processing documents it is the worker's lease.
     return or_(
-        Document.status == QUEUED,
+        and_(
+            Document.status == QUEUED,
+            or_(Document.lease_expires_at.is_(None), Document.lease_expires_at <= now),
+        ),
         and_(
             Document.status == PROCESSING,
             or_(Document.lease_expires_at.is_(None), Document.lease_expires_at <= now),
@@ -157,6 +165,11 @@ def _record_failure(session_factory, document_id, token, message, attempts):
     }
     with session_factory() as db:
         if _finish(db, document_id, token, values):
+            if retry:
+                db.query(Document).filter(Document.id == document_id).update(
+                    {Document.lease_expires_at: int(time.time()) + RETRY_DELAY_SECONDS * attempts},
+                    synchronize_session=False,
+                )
             db.commit()
 
 
