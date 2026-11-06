@@ -10,7 +10,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L6-v2"
+# The ms-marco MiniLM cross-encoder exported to ONNX, run by fastembed.
+RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
 
 _model = None
 _unavailable = False
@@ -23,9 +24,11 @@ def _get_model():
         with _lock:
             if _model is None and not _unavailable:
                 try:
-                    from sentence_transformers import CrossEncoder
+                    from fastembed.rerank.cross_encoder import TextCrossEncoder
 
-                    _model = CrossEncoder(RERANKER_MODEL, max_length=384)
+                    from app.services.embeddings import model_cache_dir
+
+                    _model = TextCrossEncoder(RERANKER_MODEL, cache_dir=model_cache_dir())
                 except Exception:
                     _unavailable = True
                     logger.warning("The re-ranker could not be loaded; ranking without it.")
@@ -40,7 +43,7 @@ def rerank(question: str, texts: list[str]):
     if model is None:
         return None
     try:
-        return model.predict([(question, text) for text in texts], show_progress_bar=False)
+        return list(model.rerank(question, texts))
     except Exception:
         logger.warning("Re-ranking failed; using the fused ranking.")
         return None

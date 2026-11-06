@@ -132,12 +132,12 @@ def test_the_model_loads_once_under_concurrent_first_use(monkeypatch):
     loads = []
 
     class SlowModel:
-        def __init__(self, name):
+        def __init__(self, name, **_options):
             loads.append(name)
             time.sleep(0.2)
 
     monkeypatch.setitem(
-        sys.modules, "sentence_transformers", types.SimpleNamespace(SentenceTransformer=SlowModel)
+        sys.modules, "fastembed", types.SimpleNamespace(TextEmbedding=SlowModel)
     )
     monkeypatch.setattr(embeddings, "_model", None)
     threads = [threading.Thread(target=embeddings._get_model) for _ in range(8)]
@@ -145,7 +145,7 @@ def test_the_model_loads_once_under_concurrent_first_use(monkeypatch):
         thread.start()
     for thread in threads:
         thread.join(10)
-    assert loads == [embeddings.EMBEDDING_MODEL]
+    assert loads == [embeddings.ONNX_MODEL]
 
 
 # Retrieval and answers through the API

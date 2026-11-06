@@ -193,3 +193,12 @@ def test_browsers_may_send_the_profile_update(client):
     )
     assert preflight.status_code == 200
     assert "PUT" in preflight.headers["access-control-allow-methods"]
+
+
+def test_hosted_postgres_urls_use_the_installed_driver():
+    from app.config import Settings
+
+    for url in ("postgres://u:p@db.example:5432/dis", "postgresql://u:p@db.example:5432/dis"):
+        configured = Settings(database_url=url, secret_key="x" * 40)
+        assert configured.database_url == "postgresql+psycopg://u:p@db.example:5432/dis"
+    assert Settings(database_url="sqlite:///./a.db", secret_key="x" * 40).database_url == "sqlite:///./a.db"

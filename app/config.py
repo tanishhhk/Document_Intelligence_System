@@ -98,6 +98,16 @@ class Settings(BaseSettings):
     default_requests_per_minute: int = Field(default=120, ge=1, le=100_000)
     max_rate_limit_keys: int = Field(default=10_000, ge=100, le=1_000_000)
 
+    @field_validator("database_url")
+    @classmethod
+    def use_installed_postgres_driver(cls, value: str) -> str:
+        # Hosts such as Render hand out postgres:// or postgresql:// URLs, which
+        # SQLAlchemy maps to psycopg2; the installed driver is psycopg 3.
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
+
     @field_validator("llm_providers")
     @classmethod
     def validate_llm_providers(cls, value: str) -> str:

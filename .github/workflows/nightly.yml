@@ -8,6 +8,9 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
 
+env:
+  FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
+
 permissions:
   contents: read
 
@@ -43,7 +46,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt -r requirements-dev.txt
       - name: Deep tests on SQLite, and migrations on PostgreSQL
         env:
@@ -66,12 +68,11 @@ jobs:
           cache-dependency-path: requirements.txt
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/huggingface
-          key: hf-all-MiniLM-L6-v2
+          path: /home/runner/.cache/fastembed
+          key: fastembed-minilm-and-msmarco
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt
       - name: Fail if retrieval quality drops below the recorded thresholds
         env:
@@ -120,7 +121,6 @@ jobs:
         if: steps.keys.outputs.present == 'true'
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
           python -m pip install -r requirements.txt
       - name: Evaluate answers and publish the summary
         if: steps.keys.outputs.present == 'true'

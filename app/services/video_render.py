@@ -128,7 +128,10 @@ def compose(slides: list[str], weights: list[int], audio_path: str, out_path: st
                 _ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", listing,
                 "-i", audio_path,
-                "-r", str(FPS), "-c:v", "libx264", "-preset", "veryfast", "-tune", "stillimage",
+                # One thread and no lookahead keep the encoder small enough for a
+                # 512 MB host; still slides lose nothing visible.
+                "-r", str(FPS), "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+                "-threads", "1", "-x264-params", "rc-lookahead=0:ref=1:bframes=0",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-shortest",
                 "-movflags", "+faststart", out_path,
             ],

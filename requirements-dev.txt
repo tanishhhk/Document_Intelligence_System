@@ -1,4 +1,6 @@
 pytest==9.2.0
 httpx==0.28.1
+# starlette.testclient uses httpx2; it used to arrive only through PyTorch tooling.
+httpx2==2.16.0
 ruff==0.17.3
 hypothesis==6.170.14
