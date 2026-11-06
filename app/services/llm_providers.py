@@ -280,7 +280,7 @@ def build_providers(
             "https://openrouter.ai/api/v1",
             settings.openrouter_models,
             api_key=settings.openrouter_api_key,
-            extra_headers={"X-Title": "Document Intelligence System"},
+            extra_headers={"X-Title": "guruKool"},
             **common,
         )
     if settings.groq_api_key:

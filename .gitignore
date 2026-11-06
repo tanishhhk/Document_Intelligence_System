@@ -7,3 +7,11 @@ __pycache__/
 .venv/
 venv/
 document_intelligence.db
+
+# AI assistant and design tool files: kept locally, not published
+CLAUDE.md
+PRODUCT.md
+DESIGN.md
+.impeccable/
+.claude/
+.playwright-mcp/
