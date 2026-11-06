@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     auto_migrate: bool = True
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["json", "text"] = "json"
+    # The interactive API docs at /docs and /openapi.json. Turn off on public
+    # deployments so they do not publish a map of every endpoint.
+    api_docs_enabled: bool = True
     ingestion_worker_enabled: bool = True
 
     upload_dir: str = Field(default="./uploads", min_length=1)
