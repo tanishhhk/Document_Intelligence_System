@@ -63,3 +63,13 @@ def test_an_answer_without_citations_cites_nothing():
     answer, cited = llm.cited_source_ids(llm.NOT_FOUND_ANSWER, [_source("S1", "a")])
     assert answer == llm.NOT_FOUND_ANSWER
     assert cited == []
+
+
+def test_other_citation_bracket_styles_are_read_and_normalized():
+    # gpt-oss on Groq writes 【S1】 and sometimes 【S1†L2-L4】; others list ids.
+    sources = [_source("S1", "a"), _source("S2", "b"), _source("S3", "c")]
+    answer, cited = llm.cited_source_ids(
+        "Opened in Singapore【S1】. Staff moved 【S2†L3-L5】 and paid [S3, S9].", sources
+    )
+    assert answer == "Opened in Singapore[S1]. Staff moved [S2] and paid [S3]."
+    assert cited == ["S1", "S2", "S3"]
