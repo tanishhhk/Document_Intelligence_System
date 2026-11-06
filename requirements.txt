@@ -13,7 +13,8 @@ pypdf==6.21.4
 google-genai==2.34.0
 httpx==0.28.1
 numpy==2.4.6
-sentence-transformers==6.2.0
+# Embeddings and re-ranking run on ONNX Runtime; no PyTorch needed.
+fastembed==0.9.1
 # Story videos: Pillow draws the slides, the ffmpeg bundled by imageio-ffmpeg
 # encodes them, and edge-tts narrates.
 pillow==13.0.0

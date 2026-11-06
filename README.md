@@ -51,8 +51,6 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 ```
 
-On Linux, `pip` installs the CUDA build of PyTorch by default. The service only needs the CPU build, which is much smaller. Install it first with `pip install torch --index-url https://download.pytorch.org/whl/cpu`.
-
 Edit `.env` before starting the service:
 
 - Set `SECRET_KEY` to a randomly generated value of at least 32 characters. You can generate one with `python -c "import secrets; print(secrets.token_hex(32))"`.
@@ -124,19 +122,18 @@ Running in containers does not by itself make the service production ready; see 
 
 ### Hosted deployment
 
-To go live, add `HF_TOKEN` (a Hugging Face Write token) and `GROQ_API_KEY` or `OPENROUTER_API_KEY` to `.env`, then run:
-
-```bash
-python scripts/go_live.py
-```
-
-It creates the Space, stores its secrets there (a new `SECRET_KEY`, the model keys, `CORS_ORIGINS` for the Pages site), connects GitHub (`HF_TOKEN` secret, `HF_SPACE` and `API_URL` variables), turns on Pages and publishes the web app. Later pushes to `main` redeploy both. `scripts/load_test.py` simulates several users at once against any `BASE_URL`.
-
-- **Web app:** GitHub Pages. `.github/workflows/pages.yml` builds `frontend/` on every push to `main`, pointing it at the `API_URL` repository variable.
-- **API:** a Hugging Face Space (free CPU tier, 16 GB of memory), which builds the same Dockerfile. `.github/workflows/deploy-api.yml` uploads the API with `scripts/deploy_space.py` on every push to `main` once the `HF_SPACE` variable and `HF_TOKEN` secret are set.
-- **Space secrets:** set `SECRET_KEY`, an answer provider key, `CORS_ORIGINS` (the Pages origin) and `DATABASE_URL` in the Space settings.
-- **Storage:** on the free tier the container's disk is temporary, so a SQLite database at `/data/db` is cleared when the Space restarts. Use a hosted PostgreSQL `DATABASE_URL` to keep accounts and documents.
-- **Client addresses:** the Space is reached through Hugging Face's proxy, and the limiter does not trust forwarded addresses. Login and registration limits are therefore shared by all visitors, which is the safe choice for a demo.
+- **API:** Render, free plan, from the Blueprint in `render.yaml`: a Docker web service plus a free PostgreSQL database.
+  1. Open [Deploy to Render](https://render.com/deploy?repo=https://github.com/tanishhhk/Document_Intelligence_System) and sign in with GitHub.
+  2. Paste `GROQ_API_KEY` and `OPENROUTER_API_KEY` when asked, then apply. Render generates `SECRET_KEY` and connects `DATABASE_URL`.
+  3. Pushes to `main` redeploy automatically.
+- **Web app:** GitHub Pages. Once the API is up, run `python scripts/go_live.py https://<service>.onrender.com`. It checks the API, sets the `API_URL` repository variable, turns on Pages and publishes `frontend/`. Later pushes to `main` republish.
+- **Free plan limits:**
+  - 512 MB of memory and 0.1 CPU. Embeddings and re-ranking run on ONNX Runtime (fastembed) instead of PyTorch, with identical vectors and evaluation scores, so the service fits.
+  - The service sleeps after 15 idle minutes and takes about a minute to wake; the web app shows a waking message meanwhile.
+  - The free database expires after 30 days. Point `DATABASE_URL` at a permanent database (for example Neon's free tier) before then.
+  - Videos live on the service's temporary disk and disappear when it sleeps. Their stories are kept in the database.
+- **Client addresses:** the limiter does not trust forwarded addresses, so login and registration limits are shared by all visitors behind Render's proxy. This is the safe choice for a demo.
+- **Load testing:** `scripts/load_test.py` simulates several users at once against any `BASE_URL`.
 
 ### Health and logs
 
