@@ -1,6 +1,6 @@
-# Document Intelligence System
+# guruKool
 
-A FastAPI service for uploading PDF documents, searching their text, and answering questions with retrieval-augmented generation (RAG).
+guruKool is a FastAPI service for uploading PDF documents, searching their text, and answering questions with retrieval-augmented generation (RAG).
 
 ## Features
 
@@ -39,8 +39,8 @@ The current retrieval implementation compares stored vectors in Python. It does 
 Python 3.11 is recommended.
 
 ```bash
-git clone https://github.com/tanishhhk/Document_Intelligence_System.git
-cd Document_Intelligence_System
+git clone https://github.com/tanishhhk/guruKool.git
+cd guruKool
 
 python -m venv .venv
 source .venv/bin/activate
@@ -123,7 +123,7 @@ Running in containers does not by itself make the service production ready; see 
 ### Hosted deployment
 
 - **API:** Render, free plan, from the Blueprint in `render.yaml`: a Docker web service plus a free PostgreSQL database.
-  1. Open [Deploy to Render](https://render.com/deploy?repo=https://github.com/tanishhhk/Document_Intelligence_System) and sign in with GitHub.
+  1. Open [Deploy to Render](https://render.com/deploy?repo=https://github.com/tanishhhk/guruKool) and sign in with GitHub.
   2. Paste `GROQ_API_KEY` and `OPENROUTER_API_KEY` when asked, then apply. Render generates `SECRET_KEY` and connects `DATABASE_URL`.
   3. Pushes to `main` redeploy automatically.
 - **Web app:** GitHub Pages. Once the API is up, run `python scripts/go_live.py https://<service>.onrender.com`. It checks the API, sets the `API_URL` repository variable, turns on Pages and publishes `frontend/`. Later pushes to `main` republish.

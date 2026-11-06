@@ -3,6 +3,7 @@ import { AlertCircle, Check, Eye, EyeOff } from "lucide-react";
 
 import { api, session } from "../api";
 import Guru from "../components/Guru";
+import { Logo } from "../components/Logo";
 
 const MIN_PASSWORD = 12;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -138,9 +139,10 @@ export default function SignIn({ onSignedIn }) {
       </section>
 
       <section className="gc-panel">
+        <Logo size={30} className="gc-logo" />
         <div className="gc-panel-inner">
-          <h1 className="gc-name">guruCool</h1>
-          <p className="gc-lede">Bring any PDF and ask it anything. Every answer shows the page it came from.</p>
+          <h1 className="gc-title">{creating ? "Create your account" : "Welcome back"}</h1>
+          <p className="gc-lede">Ask any PDF a question and see the page each answer comes from.</p>
 
           <div className="gc-switch" role="group" aria-label="Account">
             {[

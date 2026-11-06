@@ -1,4 +1,4 @@
-// The guruCool mark: a dog-eared page with one line run over by a highlighter.
+// The guruKool mark: a dog-eared page with one line run over by a highlighter.
 export function Mark({ size = 32, className = "" }) {
   return (
     <svg
@@ -27,7 +27,7 @@ export function Logo({ size = 32, className = "" }) {
   return (
     <span className={`logo ${className}`}>
       <Mark size={size} />
-      <span className="logo-word">guruCool</span>
+      <span className="logo-word">guruKool</span>
     </span>
   );
 }

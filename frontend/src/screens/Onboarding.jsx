@@ -55,7 +55,7 @@ export default function Onboarding({ user, onDone, onSkip }) {
 
         {step === 0 && (
           <>
-            <h1>What brings you to guruCool?</h1>
+            <h1>What brings you to guruKool?</h1>
             <p className="onboarding-lede">This shapes the questions we suggest and how answers and stories are told.</p>
             <div className="choices">
               {PROFESSIONS.map((item) => (

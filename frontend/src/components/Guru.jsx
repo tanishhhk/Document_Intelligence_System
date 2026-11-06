@@ -1,12 +1,12 @@
 import { useEffect, useRef } from "react";
 
-// The guruCool guru: floats on his halo and reacts to the sign-in form.
+// The guruKool guru: floats on his halo and reacts to the sign-in form.
 // mood: "watch" | "shy" (eyes covered) | "peek" | "oops" | "bliss"
 // look: { x, y } in -1..1 to aim his eyes; null follows the pointer.
 // lit: how many of the four halo rings are lit (0 to 4).
 // close: frame only his head and shoulders, for small screens.
 const RINGS = [178, 238, 298, 358];
-const INK = "#2a0f45";
+const INK = "#0e2229";
 const OUTLINE = { stroke: INK, strokeWidth: 4, strokeLinejoin: "round", strokeLinecap: "round" };
 const SILHOUETTE = { ...OUTLINE, strokeWidth: 6 };
 const LINE = { ...OUTLINE, strokeWidth: 3.5 };
@@ -16,7 +16,7 @@ function Hair({ d, width = 9 }) {
   return (
     <g fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d={d} stroke={INK} strokeWidth={width + 7} />
-      <path d={d} stroke="#fff6e8" strokeWidth={width} />
+      <path d={d} stroke="#f3ede4" strokeWidth={width} />
     </g>
   );
 }
@@ -73,7 +73,7 @@ export default function Guru({ mood = "watch", look = null, lit = 4, close = fal
             cy="255"
             r={radius}
             fill="none"
-            strokeWidth="30"
+            strokeWidth="3"
           />
         ))}
         <circle className="gc-sun" cx="300" cy="255" r="124" />
@@ -100,11 +100,11 @@ export default function Guru({ mood = "watch", look = null, lit = 4, close = fal
           <path className="gc-robe" d="M206 380c-26 52-22 108 26 136l30-22c-32-22-34-62-24-94Z" {...SILHOUETTE} />
           <path className="gc-robe" d="M394 380c26 52 22 108-26 136l-30-22c32-22 34-62 24-94Z" {...SILHOUETTE} />
 
-          {/* The book in his lap is the guruCool page. */}
+          {/* The book in his lap is the guruKool page. */}
           <g className="gc-book">
             <path d="M262 466h58l18 18v62a3 3 0 0 1-3 3h-73a3 3 0 0 1-3-3v-77a3 3 0 0 1 3-3Z" fill="#fff" {...LINE} />
             <path d="M320 466v18h18" fill="none" {...LINE} />
-            <path d="M268 501l60-5 2 13-60 5Z" fill="#ffd23f" />
+            <path d="M268 501l60-5 2 13-60 5Z" fill="#ffc94d" />
             <path d="M272 488h30M272 508h48M272 528h40" fill="none" stroke={INK} strokeWidth="3.5" strokeLinecap="round" />
           </g>
           <circle className="gc-skin" cx="258" cy="512" r="17" {...LINE} />

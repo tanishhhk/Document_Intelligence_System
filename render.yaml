@@ -1,5 +1,5 @@
 # Render Blueprint: the API on a free Docker web service with a free PostgreSQL.
-# Deploy: https://render.com/deploy?repo=https://github.com/tanishhhk/Document_Intelligence_System
+# Deploy: https://render.com/deploy?repo=https://github.com/tanishhhk/guruKool
 # Render asks for the two values marked sync: false (the model keys).
 services:
   - type: web

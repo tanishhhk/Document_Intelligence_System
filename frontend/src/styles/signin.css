@@ -1,58 +1,36 @@
-/* Sign-in: a cool guru on a rani pink poster ground. Its own world, apart from the app. */
+/* Sign-in: the guru on the app's ink desk, the form on white paper.
+   Uses the app's tokens from base.css so signing in flows into the workspace. */
 .gc-signin {
-  --rani: #ff4f97;
-  --rani-deep: #f03a86;
-  --saffron: #ff8a1f;
-  --saffron-deep: #e8650c;
-  --sun: #ffd23f;
-  --indigo: #2a0f45;
-  --maroon: #5c0026;
-  --skin: #c47a4a;
-  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --robe: #d98a3d;
+  --robe-shade: #b96a28;
+  --skin: #b97a52;
+  --beard: #f3ede4;
+  --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
 
   height: 100vh;
   height: 100dvh;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
-  background: var(--rani);
-  color: var(--indigo);
+  grid-template-columns: minmax(0, 46fr) minmax(0, 54fr);
+  background: var(--paper);
+  color: var(--ink);
   /* Fits one screen; if a window is too short, scroll instead of cutting content off. */
   overflow-x: hidden;
   overflow-y: auto;
-  caret-color: var(--indigo);
 }
 
-/* The page behind it is pink too, so overscroll never flashes the app's ink. */
-html:has(.gc-signin),
-html:has(.gc-signin) body {
-  background: #ff4f97;
-}
-
-.gc-signin ::selection {
-  background: var(--indigo);
-  color: var(--sun);
-}
-
-.gc-signin :focus-visible {
-  outline: 3px solid var(--indigo);
-  outline-offset: 3px;
-}
-
-/* The stage: halo and guru fill the left side's full height. The drawing sits a
-   little left of centre so the halo runs off the left edge and ends before the form. */
+/* The ink desk with the guru. */
 .gc-stage {
-  --shift: -70px;
   position: relative;
   min-height: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
+  background: radial-gradient(70% 60% at 50% 42%, var(--ink-2), var(--ink) 70%);
 }
 
 .gc-guru {
-  height: min(86dvh, 780px);
-  translate: var(--shift) 0;
+  height: min(78dvh, 720px);
   width: auto;
   max-width: 100%;
   overflow: visible;
@@ -60,36 +38,33 @@ html:has(.gc-signin) body {
   --look-y: 0;
 }
 
+/* The halo: thin rings that light marigold, one per three password characters. */
 .gc-sun {
-  fill: var(--sun);
+  fill: var(--highlight);
+  opacity: 0.16;
 }
 
 .gc-ring {
-  stroke: var(--rani-deep);
-  transition: stroke 320ms ease-out;
+  stroke: var(--ink-3);
+  transition: stroke 300ms var(--ease-quart), opacity 300ms var(--ease-quart);
 }
 
-.gc-ring.is-lit[data-ring="0"],
-.gc-ring.is-lit[data-ring="2"] {
-  stroke: var(--saffron);
-}
-
-.gc-ring.is-lit[data-ring="1"],
-.gc-ring.is-lit[data-ring="3"] {
-  stroke: var(--sun);
+.gc-ring.is-lit {
+  stroke: var(--highlight);
+  opacity: 0.75;
 }
 
 .gc-robe {
-  fill: var(--saffron);
+  fill: var(--robe);
 }
 
 .gc-sash {
-  fill: var(--saffron-deep);
+  fill: var(--robe-shade);
 }
 
 .gc-fold {
   fill: none;
-  stroke: var(--saffron-deep);
+  stroke: var(--robe-shade);
   stroke-width: 4;
   stroke-linecap: round;
 }
@@ -99,53 +74,53 @@ html:has(.gc-signin) body {
 }
 
 .gc-beard {
-  fill: #fff6e8;
+  fill: var(--beard);
 }
 
 .gc-shadow {
-  fill: var(--indigo);
-  opacity: 0.2;
+  fill: #000;
+  opacity: 0.22;
   transform-box: fill-box;
   transform-origin: center;
-  animation: gc-shadow 5s ease-in-out infinite;
+  animation: gc-shadow 6s ease-in-out infinite;
 }
 
 .gc-float {
-  animation: gc-float 5s ease-in-out infinite;
+  animation: gc-float 6s ease-in-out infinite;
 }
 
 @keyframes gc-float {
   50% {
-    transform: translateY(-14px);
+    transform: translateY(-6px);
   }
 }
 
 @keyframes gc-shadow {
   50% {
-    transform: scaleX(0.86);
-    opacity: 0.14;
+    transform: scaleX(0.94);
+    opacity: 0.18;
   }
 }
 
 /* Eyes, brows, shades and mouth answer the form. */
 .gc-pupil {
   transform: translate(calc(var(--look-x) * 7px), calc(var(--look-y) * 4px));
-  transition: transform 140ms ease-out;
+  transition: transform 160ms var(--ease-quart);
 }
 
 .gc-eyes {
   transform-box: fill-box;
   transform-origin: center;
-  animation: gc-blink 6s infinite;
+  animation: gc-blink 7s infinite;
 }
 
 @keyframes gc-blink {
   0%,
-  95%,
+  96%,
   100% {
     transform: scaleY(1);
   }
-  97% {
+  98% {
     transform: scaleY(0.1);
   }
 }
@@ -155,7 +130,7 @@ html:has(.gc-signin) body {
 .gc-shades {
   transform-box: fill-box;
   transform-origin: 50% 100%;
-  transition: transform 380ms var(--spring);
+  transition: transform 300ms var(--ease-quart);
 }
 
 .gc-shades {
@@ -184,56 +159,54 @@ html:has(.gc-signin) body {
 }
 
 .gc-guru[data-mood="oops"] .gc-brows {
-  transform: translateY(-9px);
+  transform: translateY(-7px);
 }
 
 .gc-guru[data-mood="oops"] .gc-head {
-  transform: rotate(-6deg);
+  transform: rotate(-4deg);
 }
 
 .gc-guru[data-mood="bliss"] .gc-float {
-  animation: gc-rise 1.4s ease-in-out infinite;
+  animation: gc-rise 1.6s ease-in-out infinite;
 }
 
 @keyframes gc-rise {
   50% {
-    transform: translateY(-46px);
+    transform: translateY(-14px);
   }
 }
 
 /* What the guru says, its tail just above his head. The drawing is centred and
-   min(86dvh, 780px) tall, and his head starts about a quarter of its height above
+   min(78dvh, 720px) tall; his head starts about a quarter of its height above
    the centre. */
 .gc-speech {
   position: absolute;
   z-index: 1;
-  bottom: calc(50% + min(86dvh, 780px) * 0.254 + 22px);
-  left: calc(50% + var(--shift));
+  bottom: calc(50% + min(78dvh, 720px) * 0.254 + 18px);
+  left: 50%;
   translate: -50% 0;
-  width: min(86%, 30rem);
-  padding: 14px 20px;
-  background: #fff;
-  border: 2.5px solid var(--indigo);
-  border-radius: 22px;
+  width: min(84%, 26rem);
+  padding: 12px 18px;
+  background: var(--paper);
+  border-radius: 14px;
   font-family: var(--font-display);
-  font-size: clamp(1.05rem, 0.9rem + 0.5vw, 1.3rem);
-  font-weight: 600;
-  line-height: 1.35;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  line-height: 1.4;
   text-align: center;
   text-wrap: balance;
-  box-shadow: 0 12px 24px -14px rgba(42, 15, 69, 0.7);
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.5);
 }
 
 .gc-speech::after {
   content: "";
   position: absolute;
   left: 50%;
-  bottom: -11px;
-  width: 18px;
-  height: 18px;
-  background: #fff;
-  border: solid var(--indigo);
-  border-width: 0 2.5px 2.5px 0;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  background: var(--paper);
+  border-radius: 2px;
   transform: translateX(-50%) rotate(45deg);
 }
 
@@ -241,62 +214,67 @@ html:has(.gc-signin) body {
   visibility: hidden;
 }
 
-/* The panel: name, one line, the switch and the form. */
+/* The paper side: logo, heading, the switch and the form. */
 .gc-panel {
+  position: relative;
   min-height: 0;
   display: grid;
   align-items: center;
-  padding: clamp(20px, 4dvh, 48px) clamp(24px, 6vw, 96px) clamp(20px, 4dvh, 48px) clamp(16px, 2vw, 40px);
+  justify-items: center;
+  padding: clamp(72px, 12dvh, 112px) clamp(24px, 6vw, 96px) clamp(24px, 5dvh, 56px);
+}
+
+.gc-logo {
+  position: absolute;
+  top: clamp(20px, 4dvh, 36px);
+  left: clamp(24px, 4vw, 48px);
 }
 
 .gc-panel-inner {
-  width: min(100%, 27rem);
+  width: min(100%, 25rem);
 }
 
-.gc-name {
-  font-size: clamp(3rem, 1.6rem + 4.4vw, 6rem);
-  font-weight: 900;
-  line-height: 0.92;
-  letter-spacing: -0.035em;
-  font-variation-settings: "SOFT" 100, "WONK" 1;
+.gc-title {
+  font-size: var(--step-3);
 }
 
 .gc-lede {
-  margin-top: clamp(10px, 2dvh, 18px);
-  font-size: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
-  line-height: 1.45;
-  max-width: 26em;
+  margin-top: var(--space-2);
+  color: var(--pencil);
 }
 
 .gc-switch {
-  margin-top: clamp(16px, 3.5dvh, 32px);
+  margin-top: clamp(20px, 3.5dvh, 32px);
   display: grid;
   grid-template-columns: 1fr 1fr;
-  padding: 4px;
-  border: 2.5px solid var(--indigo);
-  border-radius: 999px;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--page-shade);
+  border-radius: var(--radius-m);
 }
 
 .gc-switch button {
-  min-height: 42px;
-  border-radius: 999px;
+  min-height: 40px;
+  border-radius: var(--radius-s);
   font-weight: 700;
-  transition: background-color 200ms ease-out, color 200ms ease-out;
+  color: var(--pencil);
+  transition: background-color 160ms ease-out, color 160ms ease-out;
 }
 
 .gc-switch button[aria-pressed="true"] {
-  background: var(--indigo);
-  color: var(--rani);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(14, 34, 41, 0.12);
 }
 
 .gc-switch button[aria-pressed="false"]:hover {
-  background: rgba(42, 15, 69, 0.1);
+  color: var(--ink);
 }
 
 .gc-form {
-  margin-top: clamp(14px, 3dvh, 28px);
+  margin-top: clamp(16px, 3dvh, 28px);
   display: grid;
-  gap: clamp(10px, 2dvh, 18px);
+  gap: clamp(12px, 2dvh, 18px);
 }
 
 .gc-field {
@@ -306,82 +284,95 @@ html:has(.gc-signin) body {
 
 .gc-field label {
   font-weight: 700;
-  font-size: 0.9375rem;
+  font-size: var(--step--1);
 }
 
 .gc-input-wrap {
   position: relative;
-  transition: transform 220ms var(--ease-out);
-}
-
-.gc-input-wrap:focus-within {
-  transform: translateY(-2px);
 }
 
 .gc-input {
   width: 100%;
-  height: 52px;
-  padding: 0 16px;
-  background: #fff;
-  border: 2.5px solid var(--indigo);
-  border-radius: 14px;
-  font-size: 1.0625rem;
-  color: var(--indigo);
-  box-shadow: inset 0 2px 6px -2px rgba(42, 15, 69, 0.18);
-  transition: box-shadow 200ms ease-out;
+  height: 46px;
+  padding: 0 44px 0 var(--space-4);
+  background: var(--paper);
+  border: 1.5px solid var(--rule);
+  border-radius: var(--radius-m);
+  color: var(--ink);
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
-.gc-input-wrap .gc-input {
+.gc-input-wrap:has(.gc-reveal) .gc-input {
   padding-right: 52px;
 }
 
 .gc-input-wrap:has(.gc-beads) .gc-input {
-  padding-right: 112px;
+  padding-right: 104px;
 }
 
-/* Browser autofill keeps the field white with indigo text. */
+.gc-input:hover {
+  border-color: var(--ink-soft);
+}
+
+.gc-input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--highlight-soft);
+}
+
+.gc-input[aria-invalid="true"] {
+  border-color: var(--red-pen);
+}
+
+/* Browser autofill keeps the field white with ink text. */
 .gc-input:-webkit-autofill,
 .gc-input:-webkit-autofill:hover,
 .gc-input:-webkit-autofill:focus {
-  -webkit-text-fill-color: var(--indigo);
-  box-shadow: inset 0 0 0 40px #fff;
+  -webkit-text-fill-color: var(--ink);
+  box-shadow: inset 0 0 0 40px var(--paper);
   transition: background-color 9999s;
 }
 
 .gc-input:-webkit-autofill:focus {
   box-shadow:
-    inset 0 0 0 40px #fff,
-    0 0 0 4px var(--sun),
-    0 0 0 6.5px var(--indigo);
+    inset 0 0 0 40px var(--paper),
+    0 0 0 3px var(--highlight-soft);
 }
 
-/* The email seal: pops in once the address looks complete. */
+/* The email seal: a small tick once the address looks complete. */
 .gc-seal {
   position: absolute;
   top: 50%;
   right: 12px;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--indigo);
-  color: var(--sun);
+  background: var(--green-tick);
+  color: var(--paper);
   pointer-events: none;
   translate: 0 -50%;
-  transform: scale(0) rotate(-90deg);
-  transition: transform 320ms var(--spring);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 200ms var(--ease-quart), transform 200ms var(--ease-quart);
 }
 
 .gc-seal.is-on {
-  transform: scale(1) rotate(0deg);
+  opacity: 1;
+  transform: scale(1);
+}
+
+.gc-seal svg {
+  width: 13px;
+  height: 13px;
 }
 
 /* The password beads: four, filling with the guru's halo. */
 .gc-beads {
   position: absolute;
   top: 50%;
-  right: 52px;
+  right: 50px;
   display: flex;
   gap: 5px;
   translate: 0 -50%;
@@ -389,162 +380,138 @@ html:has(.gc-signin) body {
 }
 
 .gc-beads span {
-  width: 11px;
-  height: 11px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 2px solid var(--indigo);
-  background: #fff;
-  transition: background-color 200ms ease-out, transform 320ms var(--spring);
+  background: var(--rule);
+  transition: background-color 200ms var(--ease-quart);
 }
 
 .gc-beads span.is-lit {
-  background: var(--saffron);
-  transform: scale(1.2);
-}
-
-.gc-beads span.is-lit:nth-child(even) {
-  background: var(--sun);
-}
-
-.gc-input:focus {
-  outline: none;
-  box-shadow:
-    0 0 0 4px var(--sun),
-    0 0 0 6.5px var(--indigo),
-    0 14px 22px -14px rgba(42, 15, 69, 0.8);
-}
-
-.gc-input[aria-invalid="true"] {
-  border-color: var(--maroon);
-  background: #fff0f5;
+  background: var(--marigold-text);
 }
 
 .gc-reveal {
   position: absolute;
   top: 50%;
-  right: 4px;
+  right: 2px;
   translate: 0 -50%;
   width: 44px;
-  height: 44px;
+  height: 42px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  color: var(--indigo);
+  border-radius: var(--radius-s);
+  color: var(--pencil);
 }
 
 .gc-reveal:hover {
-  background: rgba(42, 15, 69, 0.08);
+  color: var(--ink);
 }
 
 .gc-note,
 .gc-error {
   min-height: 1.4em;
-  font-size: 0.9375rem;
+  font-size: var(--step--1);
   line-height: 1.4;
+}
+
+.gc-note {
+  color: var(--pencil);
 }
 
 .gc-error {
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  color: var(--maroon);
-  font-weight: 700;
+  color: var(--red-pen);
+  font-weight: 600;
 }
 
 .gc-error svg {
   flex: none;
-  margin-top: 2px;
+  margin-top: 1px;
 }
 
 .gc-submit {
-  height: 56px;
+  height: 46px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: var(--sun);
-  color: var(--indigo);
-  border: 2.5px solid var(--indigo);
-  border-radius: 14px;
-  font-size: 1.0625rem;
+  background: var(--highlight);
+  color: var(--ink);
+  border-radius: var(--radius-m);
   font-weight: 700;
-  box-shadow: 0 10px 20px -12px rgba(42, 15, 69, 0.8);
-  transition: transform 220ms var(--ease-out), box-shadow 200ms ease-out;
+  box-shadow: 0 1px 2px rgba(143, 82, 0, 0.25), 0 8px 16px -10px rgba(143, 82, 0, 0.5);
+  transition: background-color 160ms ease-out, transform 160ms var(--ease-out);
 }
 
 .gc-submit:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 16px 26px -14px rgba(42, 15, 69, 0.85);
-}
-
-.gc-submit:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: 0 4px 8px -6px rgba(42, 15, 69, 0.8);
+  background: #ffd36b;
+  transform: translateY(-1px);
 }
 
 .gc-submit:disabled {
   cursor: progress;
+  opacity: 0.8;
+}
+
+/* On white paper the focus ring is ink, so it stays visible. */
+.gc-panel :focus-visible:not(.gc-input) {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .gc-failure {
   margin-top: -4px;
 }
 
-/* Phones and narrow windows: guru on top, form below, still one screen. */
+/* Phones and narrow windows: a band of desk with the guru, the form below. */
 @media (max-width: 820px) {
   .gc-signin {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(190px, 1fr) auto;
-  }
-
-  .gc-stage {
-    --shift: 0px;
+    grid-template-rows: minmax(170px, 1fr) auto;
   }
 
   /* Framed close on his head and shoulders so his face stays readable. */
   .gc-guru {
     position: absolute;
-    inset: 62px 0 0;
+    inset: 58px 0 0;
     width: 100%;
-    height: calc(100% - 62px);
+    height: calc(100% - 58px);
   }
 
   .gc-speech {
     top: 10px;
     bottom: auto;
     width: min(92%, 24rem);
-    padding: 8px 14px;
+    padding: 7px 14px;
     font-size: 0.9375rem;
   }
 
   .gc-panel {
-    padding: 16px 20px clamp(16px, 3dvh, 28px);
+    padding: 20px 20px clamp(16px, 3dvh, 28px);
     align-items: start;
   }
 
-  .gc-panel-inner {
-    margin-inline: auto;
+  .gc-logo {
+    display: none;
   }
 
-  .gc-name {
-    font-size: clamp(2.5rem, 1.5rem + 5vw, 3.5rem);
-  }
-
-  .gc-lede {
-    margin-top: 6px;
-    font-size: 1rem;
+  .gc-title {
+    font-size: 1.75rem;
   }
 }
 
-/* Short phones (375 by 667 and smaller): tighter bubble and spacing. */
+/* Short phones (375 by 667 and smaller): tighter spacing. */
 @media (max-width: 820px) and (max-height: 720px) {
   .gc-signin {
-    grid-template-rows: minmax(150px, 1fr) auto;
+    grid-template-rows: minmax(140px, 1fr) auto;
   }
 
   .gc-guru {
-    inset: 50px 0 0;
-    height: calc(100% - 50px);
+    inset: 46px 0 0;
+    height: calc(100% - 46px);
   }
 
   .gc-speech {
@@ -554,32 +521,20 @@ html:has(.gc-signin) body {
   }
 
   .gc-panel {
-    padding-top: 20px;
+    padding-top: 16px;
   }
 
-  .gc-name {
-    font-size: 2.25rem;
+  .gc-title {
+    font-size: 1.5rem;
   }
 
   .gc-switch {
-    margin-top: 12px;
-  }
-
-  .gc-switch button {
-    min-height: 38px;
+    margin-top: 14px;
   }
 
   .gc-form {
-    margin-top: 10px;
+    margin-top: 12px;
     gap: 8px;
-  }
-
-  .gc-input,
-  .gc-input-wrap,
-  .gc-seal,
-  .gc-beads span,
-  .gc-submit {
-    height: 48px;
   }
 }
 
@@ -607,10 +562,10 @@ html:has(.gc-signin) body {
   .gc-head,
   .gc-brows,
   .gc-shades,
-  .gc-input,
-  .gc-input-wrap,
+  .gc-ring,
   .gc-seal,
   .gc-beads span,
+  .gc-input,
   .gc-submit {
     transition: none;
   }
