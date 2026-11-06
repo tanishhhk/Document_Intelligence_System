@@ -40,6 +40,8 @@ services:
         value: "320"
       - key: LOG_FORMAT
         value: json
+      - key: API_DOCS_ENABLED
+        value: "false"
 
 databases:
   - name: gurucool-db

@@ -40,11 +40,18 @@ async def lifespan(app: FastAPI):
     engine.dispose()
 
 
+def docs_urls(enabled: bool) -> dict:
+    if enabled:
+        return {}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
 app = FastAPI(
     title="Document Intelligence System",
     description="AI-powered document analysis with RAG.",
     version="1.2.0",
     lifespan=lifespan,
+    **docs_urls(settings.api_docs_enabled),
 )
 
 # Middleware added last runs first. CORS is outermost so browsers can read

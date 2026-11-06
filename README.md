@@ -164,6 +164,7 @@ Logs are JSON lines on standard output (`LOG_FORMAT=text` for plain text). Each 
 | `AUTO_MIGRATE` | Upgrade the schema on startup | `true` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` or `ERROR` | `INFO` |
 | `LOG_FORMAT` | `json` or `text` | `json` |
+| `API_DOCS_ENABLED` | Serve the interactive API docs at `/docs` and `/openapi.json`; off on Render | `true` |
 | `INGESTION_WORKER_ENABLED` | Run the document processing worker inside the API process | `true` |
 | `UPLOAD_DIR` | Where uploaded PDFs are stored | `./uploads` |
 | `MAX_FILE_SIZE` | Maximum PDF size in bytes | `10485760` |
